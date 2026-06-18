@@ -69,9 +69,14 @@ describe('isAllowedWebviewConfig', () => {
     expect(isAllowedWebviewConfig(chatgpt?.url ?? '', chatgpt?.partition ?? '')).toBe(true);
   });
 
-  it('denies mismatched partitions and path variations', () => {
-    expect(isAllowedWebviewConfig('https://chatgpt.com/', 'persist:chatgpt')).toBe(false);
+  it('allows browser-normalized root urls for configured services', () => {
+    expect(isAllowedWebviewConfig('https://chatgpt.com/', 'persist:chatgpt')).toBe(true);
+  });
+
+  it('denies mismatched partitions, unconfigured paths, and invalid urls', () => {
+    expect(isAllowedWebviewConfig('https://chatgpt.com/c/123', 'persist:chatgpt')).toBe(false);
     expect(isAllowedWebviewConfig('https://chatgpt.com', 'persist:deepseek')).toBe(false);
+    expect(isAllowedWebviewConfig('not a url', 'persist:chatgpt')).toBe(false);
   });
 });
 

@@ -70,9 +70,20 @@ export function isAllowedExternalUrl(url: string): boolean {
 }
 
 export function isAllowedWebviewConfig(src: string, partition: string): boolean {
-  return services.some(
-    (service: ServiceDefinition) => service.url === src && service.partition === partition
-  );
+  let normalizedSrc: string;
+  try {
+    normalizedSrc = new URL(src).href;
+  } catch {
+    return false;
+  }
+
+  return services.some((service: ServiceDefinition) => {
+    if (service.partition !== partition) {
+      return false;
+    }
+
+    return new URL(service.url).href === normalizedSrc;
+  });
 }
 
 export function sanitizeWebviewPreferences<T extends WebviewPreferences>(preferences: T): T {
