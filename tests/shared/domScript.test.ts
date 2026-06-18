@@ -13,6 +13,28 @@ describe('buildDomSendScript', () => {
     expect(script).not.toContain('const prompt = `hello `world` ${bad}`');
   });
 
+  it('escapes selector arrays safely', () => {
+    const inputSelectors = [
+      'textarea[data-label="say \\"hello\\""]',
+      'div[data-line="first line\nsecond line"]',
+      'section[data-html="</script><script>window.bad()</script>"]'
+    ];
+    const submitSelectors = [
+      'button[aria-label="send \\"now\\""]',
+      'button[data-line="submit\nnext"]',
+      'button[data-html="</script><script>window.send()</script>"]'
+    ];
+
+    const script = buildDomSendScript({
+      prompt: 'hello',
+      inputSelectors,
+      submitSelectors
+    });
+
+    expect(script).toContain(`const inputSelectors = ${JSON.stringify(inputSelectors)};`);
+    expect(script).toContain(`const submitSelectors = ${JSON.stringify(submitSelectors)};`);
+  });
+
   it('contains stable result shapes and Chinese error messages', () => {
     const script = buildDomSendScript({
       prompt: 'hello',
