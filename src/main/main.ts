@@ -1,7 +1,11 @@
 import { BrowserWindow, app, shell } from 'electron';
-import { join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const distRoot = join(process.cwd(), 'dist');
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const distRoot = currentDir.endsWith(`${sep}dist${sep}main`)
+  ? join(currentDir, '..')
+  : join(process.cwd(), 'dist');
 const preloadPath = join(distRoot, 'preload/preload.js');
 
 export type RendererTarget =
