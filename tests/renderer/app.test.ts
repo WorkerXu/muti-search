@@ -147,7 +147,7 @@ describe('createApp', () => {
     header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('expanded');
 
-    webview.dispatchEvent(new MouseEvent('dblclick'));
+    webview.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('grid');
   });
 

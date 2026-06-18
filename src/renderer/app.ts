@@ -178,9 +178,14 @@ export function createApp(root: HTMLDivElement): void {
       }
     };
 
-    header.addEventListener('dblclick', toggleExpanded);
-    body.addEventListener('dblclick', toggleExpanded);
-    webview.addEventListener('dblclick', toggleExpanded);
+    const handlePaneDoubleClick = (event: Event) => {
+      event.stopPropagation();
+      toggleExpanded();
+    };
+
+    header.addEventListener('dblclick', handlePaneDoubleClick);
+    body.addEventListener('dblclick', handlePaneDoubleClick);
+    webview.addEventListener('dblclick', handlePaneDoubleClick);
 
     webview.addEventListener('dom-ready', () => {
       pane.hasDomReady = true;
