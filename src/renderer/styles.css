@@ -52,7 +52,7 @@ body {
 .send-button,
 .service-toggle,
 .pane-enabled-toggle,
-.pane-expand-button,
+.pane-action-button,
 .pane-header {
   font: inherit;
 }
@@ -141,7 +141,7 @@ body {
 
 .pane-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
@@ -203,7 +203,7 @@ body {
   background: #6b7280;
 }
 
-.pane-expand-button {
+.pane-action-button {
   width: 24px;
   height: 24px;
   display: inline-grid;
@@ -216,7 +216,7 @@ body {
   cursor: pointer;
 }
 
-.pane-expand-button:hover {
+.pane-action-button:hover {
   background: #f3f4f6;
 }
 

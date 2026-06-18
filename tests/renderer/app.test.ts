@@ -19,14 +19,16 @@ function attachWebviewMocks(root: HTMLDivElement) {
   const webviews = Array.from(root.querySelectorAll('webview')) as MockWebview[];
 
   const executeJavaScriptMocks = webviews.map(() => createMockExecuteJavaScript());
+  const loadURLMocks = webviews.map(() => vi.fn<(url: string) => Promise<void>>());
   const reloadMocks = webviews.map(() => vi.fn());
 
   webviews.forEach((webview, index) => {
     webview.executeJavaScript = executeJavaScriptMocks[index];
+    webview.loadURL = loadURLMocks[index];
     webview.reload = reloadMocks[index];
   });
 
-  return { webviews, executeJavaScriptMocks, reloadMocks };
+  return { webviews, executeJavaScriptMocks, loadURLMocks, reloadMocks };
 }
 
 function createDeferred<T>(): Deferred<T> {
@@ -212,6 +214,49 @@ describe('createApp', () => {
     button.click();
     expect(pane.getAttribute('data-layout')).toBe('grid');
     expect(button.getAttribute('aria-label')).toBe('放大');
+  });
+
+  it('reloads a pane back to its configured home url', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { webviews, loadURLMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="grok"]') as HTMLDivElement;
+    const button = pane.querySelector('[data-pane-home="grok"]') as HTMLButtonElement;
+    const grok = getService('grok');
+
+    webviews[2].setAttribute('src', 'https://x.com/home');
+    webviews[2].dispatchEvent(new Event('dom-ready'));
+    expect(pane.getAttribute('data-status')).toBe('ready');
+
+    loadURLMocks[2].mockResolvedValue();
+    button.click();
+
+    await flushPromises();
+
+    expect(loadURLMocks[2]).toHaveBeenCalledWith(grok.url);
+    expect(pane.getAttribute('data-status')).toBe('loading');
+    expect(pane.querySelector('.pane-error')?.textContent).toBe('');
+  });
+
+  it('falls back to resetting webview src when loadURL is unavailable', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { webviews } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="grok"]') as HTMLDivElement;
+    const button = pane.querySelector('[data-pane-home="grok"]') as HTMLButtonElement;
+    const grok = getService('grok');
+
+    webviews[2].setAttribute('src', 'https://x.com/home');
+    delete webviews[2].loadURL;
+
+    button.click();
+
+    expect(webviews[2].getAttribute('src')).toBe(grok.url);
+    expect(pane.getAttribute('data-status')).toBe('loading');
   });
 
   it('re-enables a loaded pane as ready without reloading it', () => {

@@ -18,6 +18,7 @@ type PaneRuntime = {
   enabledToggle: HTMLInputElement;
   enabledText: HTMLSpanElement;
   statusDot: HTMLSpanElement;
+  homeButton: HTMLButtonElement;
   expandButton: HTMLButtonElement;
   errorText: HTMLSpanElement;
   webview: RendererWebviewElement;
@@ -115,9 +116,15 @@ export function createApp(root: HTMLDivElement): void {
     statusDot.className = 'pane-status-dot';
     header.append(statusDot);
 
+    const homeButton = document.createElement('button');
+    homeButton.type = 'button';
+    homeButton.className = 'pane-action-button';
+    homeButton.dataset.paneHome = service.id;
+    header.append(homeButton);
+
     const expandButton = document.createElement('button');
     expandButton.type = 'button';
-    expandButton.className = 'pane-expand-button';
+    expandButton.className = 'pane-action-button';
     expandButton.dataset.paneExpand = service.id;
     header.append(expandButton);
 
@@ -146,6 +153,7 @@ export function createApp(root: HTMLDivElement): void {
       enabledToggle,
       enabledText,
       statusDot,
+      homeButton,
       expandButton,
       errorText,
       webview
@@ -177,6 +185,11 @@ export function createApp(root: HTMLDivElement): void {
         renderPane(item, expandedPaneId);
       }
     };
+
+    homeButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      navigatePaneHome(pane, expandedPaneId);
+    });
 
     expandButton.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -345,11 +358,38 @@ function renderPane(pane: PaneRuntime, expandedPaneId: ServiceId | null): void {
   pane.statusDot.dataset.status = pane.state.status;
   pane.statusDot.title = statusLabels[pane.state.status];
   pane.statusDot.setAttribute('aria-label', statusLabels[pane.state.status]);
+  pane.homeButton.textContent = '↻';
+  pane.homeButton.title = '回主页';
+  pane.homeButton.setAttribute('aria-label', '回主页');
   pane.expandButton.textContent = layout === 'expanded' ? '↙' : '⛶';
   pane.expandButton.title = layout === 'expanded' ? '还原' : '放大';
   pane.expandButton.setAttribute('aria-label', layout === 'expanded' ? '还原' : '放大');
   pane.errorText.textContent = pane.state.errorMessage ?? '';
   pane.webview.hidden = !pane.state.enabled;
+}
+
+function navigatePaneHome(pane: PaneRuntime, expandedPaneId: ServiceId | null): void {
+  const navigationGeneration = pane.sendGeneration + 1;
+  pane.sendGeneration = navigationGeneration;
+  pane.hasDomReady = false;
+  pane.state.status = pane.state.enabled ? 'loading' : 'disabled';
+  pane.state.errorMessage = null;
+  renderPane(pane, expandedPaneId);
+
+  if (typeof pane.webview.loadURL === 'function') {
+    void pane.webview.loadURL(pane.service.url).catch((error: unknown) => {
+      if (navigationGeneration !== pane.sendGeneration || !pane.state.enabled) {
+        return;
+      }
+
+      pane.state.status = 'error';
+      pane.state.errorMessage = toShortError(error);
+      renderPane(pane, expandedPaneId);
+    });
+    return;
+  }
+
+  pane.webview.setAttribute('src', pane.service.url);
 }
 
 function setTopError(element: HTMLElement, message: string | null): void {
