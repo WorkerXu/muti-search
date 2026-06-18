@@ -22,7 +22,12 @@ export function buildDomSendScript(input: DomSendScriptInput): string {
 
   const findFirst = (selectors) => {
     for (const selector of selectors) {
-      const element = document.querySelector(selector);
+      let element = null;
+      try {
+        element = document.querySelector(selector);
+      } catch {
+        continue;
+      }
       if (element) return element;
     }
     return null;
