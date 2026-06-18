@@ -170,11 +170,7 @@ export function createApp(root: HTMLDivElement): void {
     };
 
     header.addEventListener('dblclick', toggleExpanded);
-    article.addEventListener('dblclick', (event) => {
-      if (event.target === article) {
-        toggleExpanded();
-      }
-    });
+    body.addEventListener('dblclick', toggleExpanded);
 
     webview.addEventListener('dom-ready', () => {
       if (!pane.state.enabled) {

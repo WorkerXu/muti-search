@@ -104,18 +104,19 @@ describe('createApp', () => {
     expect(root.querySelector('[data-top-error]')?.textContent).toBe('请输入问题');
   });
 
-  it('toggles enlarged pane on double click', () => {
+  it('toggles enlarged pane on header and pane body double click', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
 
     const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
     const header = pane.querySelector('[data-pane-header]') as HTMLDivElement;
+    const body = pane.querySelector('.pane-body') as HTMLDivElement;
 
     header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('expanded');
 
-    pane.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    body.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('grid');
   });
 });
