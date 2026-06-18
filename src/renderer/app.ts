@@ -7,14 +7,6 @@ import {
 } from '../shared/status';
 import type { RendererWebviewElement } from './webviewTypes';
 
-const DEFAULT_INPUT_SELECTORS = ['textarea', '[contenteditable="true"]', 'div[role="textbox"]'];
-const DEFAULT_SUBMIT_SELECTORS = [
-  'button[type="submit"]',
-  'button[aria-label*="Send"]',
-  'button[aria-label*="发送"]',
-  'button[data-testid*="send"]'
-];
-
 type PaneRuntime = {
   service: ServiceDefinition;
   state: PaneState;
@@ -277,8 +269,8 @@ async function sendPrompt(options: {
         const result = await pane.webview.executeJavaScript(
           buildDomSendScript({
             prompt,
-            inputSelectors: DEFAULT_INPUT_SELECTORS,
-            submitSelectors: DEFAULT_SUBMIT_SELECTORS
+            inputSelectors: pane.service.send.inputSelectors,
+            submitSelectors: pane.service.send.submitSelectors
           }),
           true
         );

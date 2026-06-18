@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { services } from '../src/shared/services';
+import { getService, services } from '../src/shared/services';
 import {
   getPreloadPath,
   getRendererTarget,
@@ -46,12 +46,15 @@ describe('getPreloadPath', () => {
 });
 
 describe('isAllowedExternalUrl', () => {
-  it('allows standard http and https URLs', () => {
-    expect(isAllowedExternalUrl('https://example.com')).toBe(true);
-    expect(isAllowedExternalUrl('http://127.0.0.1:5173')).toBe(true);
+  it('allows configured service origins and urls', () => {
+    expect(isAllowedExternalUrl(getService('chatgpt').url)).toBe(true);
+    expect(isAllowedExternalUrl('https://chatgpt.com/c/123')).toBe(true);
+    expect(isAllowedExternalUrl(getService('doubao').url)).toBe(true);
   });
 
-  it('denies non-http protocols and invalid URLs', () => {
+  it('denies arbitrary origins, non-http protocols, and invalid URLs', () => {
+    expect(isAllowedExternalUrl('https://example.com')).toBe(false);
+    expect(isAllowedExternalUrl('http://127.0.0.1:5173')).toBe(false);
     expect(isAllowedExternalUrl('javascript:alert(1)')).toBe(false);
     expect(isAllowedExternalUrl('file:///tmp/test.html')).toBe(false);
     expect(isAllowedExternalUrl('not a url')).toBe(false);

@@ -1,7 +1,7 @@
 export type DomSendScriptInput = {
   prompt: string;
-  inputSelectors: string[];
-  submitSelectors: string[];
+  inputSelectors: readonly string[];
+  submitSelectors: readonly string[];
 };
 
 export type DomSendScriptResult = {

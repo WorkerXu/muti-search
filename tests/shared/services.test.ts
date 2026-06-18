@@ -51,6 +51,28 @@ describe('service registry', () => {
     expect(getService('perplexity').url).toBe('https://www.perplexity.ai');
   });
 
+  it('stores explicit send selector metadata on every service', () => {
+    for (const service of services) {
+      const send = (
+        service as {
+          send?: { inputSelectors?: readonly string[]; submitSelectors?: readonly string[] };
+        }
+      ).send;
+
+      expect(Array.isArray(send?.inputSelectors)).toBe(true);
+      expect(send?.inputSelectors?.length ?? 0).toBeGreaterThan(0);
+      expect(Array.isArray(send?.submitSelectors)).toBe(true);
+      expect(send?.submitSelectors?.length ?? 0).toBeGreaterThan(0);
+    }
+
+    expect(getService('doubao')).toMatchObject({
+      send: {
+        inputSelectors: expect.arrayContaining(['textarea', '[contenteditable="true"]']),
+        submitSelectors: expect.arrayContaining(['button[aria-label*="发送"]'])
+      }
+    });
+  });
+
   it('throws a clear error for an unknown service id', () => {
     expect(() => getService('missing')).toThrow('Unknown service id: missing');
   });

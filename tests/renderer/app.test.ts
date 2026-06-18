@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { services } from '../../src/shared/services';
+import { buildDomSendScript } from '../../src/shared/domScript';
+import { getService, services } from '../../src/shared/services';
 import { createApp } from '../../src/renderer/app';
 import type { RendererWebviewElement } from '../../src/renderer/webviewTypes';
 
@@ -115,6 +116,50 @@ describe('createApp', () => {
 
     const calledScript = executeJavaScriptMocks[0].mock.calls[0]?.[0];
     expect(calledScript).toContain(JSON.stringify('hello renderer'));
+  });
+
+  it('uses each service send selector config when building the dom script', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const doubao = getService('doubao') as (typeof services)[number] & {
+      send: {
+        inputSelectors: string[];
+        submitSelectors: string[];
+      };
+    };
+
+    for (const mock of executeJavaScriptMocks) {
+      mock.mockResolvedValue({ status: 'sent', errorMessage: null });
+    }
+
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'doubao') {
+        toggle.click();
+      }
+    }
+
+    promptInput.value = 'hello doubao';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPromises();
+
+    expect(executeJavaScriptMocks[3]).toHaveBeenCalledTimes(1);
+    expect(executeJavaScriptMocks[3].mock.calls[0]?.[0]).toBe(
+      buildDomSendScript({
+        prompt: 'hello doubao',
+        inputSelectors: doubao.send.inputSelectors,
+        submitSelectors: doubao.send.submitSelectors
+      })
+    );
   });
 
   it('shows top error for empty prompts', () => {

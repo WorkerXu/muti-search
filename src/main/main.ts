@@ -51,11 +51,19 @@ export function getRendererTarget(env: NodeJS.ProcessEnv = process.env): Rendere
   return { type: 'file', value: join(resolveDistRoot(), 'renderer/index.html') };
 }
 
+const ALLOWED_EXTERNAL_ORIGINS = new Set(
+  services.map((service) => new URL(service.url).origin)
+);
+
 export function isAllowedExternalUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
 
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+
+    return ALLOWED_EXTERNAL_ORIGINS.has(parsed.origin);
   } catch {
     return false;
   }
