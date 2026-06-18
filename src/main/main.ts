@@ -1,12 +1,43 @@
 import { BrowserWindow, app, shell } from 'electron';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { services, type ServiceDefinition } from '../shared/services.js';
 
-const currentDir = dirname(fileURLToPath(import.meta.url));
-const distRoot = currentDir.endsWith(`${sep}dist${sep}main`)
-  ? join(currentDir, '..')
-  : join(process.cwd(), 'dist');
-const preloadPath = join(distRoot, 'preload/preload.js');
+type WebviewPreferences = {
+  preload?: string;
+  preloadURL?: string;
+  nodeIntegration?: boolean;
+  contextIsolation?: boolean;
+  sandbox?: boolean;
+  webSecurity?: boolean;
+  [key: string]: unknown;
+};
+
+type WebviewParams = {
+  src?: string;
+  partition?: string;
+  [key: string]: string | undefined;
+};
+
+type PreventableEvent = {
+  preventDefault(): void;
+};
+
+export function resolveDistRoot(
+  currentModuleUrl: string = import.meta.url,
+  cwd: string = process.cwd()
+): string {
+  const currentDir = dirname(fileURLToPath(currentModuleUrl));
+
+  return currentDir.endsWith(`${sep}dist${sep}main`) ? join(currentDir, '..') : join(cwd, 'dist');
+}
+
+export function getPreloadPath(
+  currentModuleUrl: string = import.meta.url,
+  cwd: string = process.cwd()
+): string {
+  return join(resolveDistRoot(currentModuleUrl, cwd), 'preload/preload.js');
+}
 
 export type RendererTarget =
   | { type: 'url'; value: string }
@@ -17,7 +48,57 @@ export function getRendererTarget(env: NodeJS.ProcessEnv = process.env): Rendere
     return { type: 'url', value: env.VITE_DEV_SERVER_URL };
   }
 
-  return { type: 'file', value: join(distRoot, 'renderer/index.html') };
+  return { type: 'file', value: join(resolveDistRoot(), 'renderer/index.html') };
+}
+
+export function isAllowedExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedWebviewConfig(src: string, partition: string): boolean {
+  return services.some(
+    (service: ServiceDefinition) => service.url === src && service.partition === partition
+  );
+}
+
+export function sanitizeWebviewPreferences<T extends WebviewPreferences>(preferences: T): T {
+  delete preferences.preload;
+  delete preferences.preloadURL;
+  preferences.nodeIntegration = false;
+  preferences.contextIsolation = true;
+  preferences.sandbox = true;
+  preferences.webSecurity = true;
+  return preferences;
+}
+
+export function handleWebviewAttach(
+  event: PreventableEvent,
+  preferences: WebviewPreferences,
+  params: WebviewParams
+): void {
+  sanitizeWebviewPreferences(preferences);
+
+  if (!isAllowedWebviewConfig(params.src ?? '', params.partition ?? '')) {
+    event.preventDefault();
+  }
+}
+
+export function registerWebviewHardening(targetApp: Pick<typeof app, 'on'> = app): void {
+  targetApp.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event, preferences, params) => {
+      handleWebviewAttach(event, preferences as WebviewPreferences, params as WebviewParams);
+    });
+  });
+}
+
+function createWindowWithErrorHandling(): void {
+  void createWindow().catch(reportStartupError);
 }
 
 export async function createWindow(): Promise<BrowserWindow> {
@@ -28,7 +109,7 @@ export async function createWindow(): Promise<BrowserWindow> {
     minHeight: 760,
     title: 'muti-search',
     webPreferences: {
-      preload: preloadPath,
+      preload: getPreloadPath(),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -38,7 +119,10 @@ export async function createWindow(): Promise<BrowserWindow> {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
+
     return { action: 'deny' };
   });
 
@@ -58,6 +142,8 @@ function reportStartupError(error: unknown): void {
 }
 
 function startApp(): void {
+  registerWebviewHardening();
+
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
       app.quit();
@@ -67,11 +153,11 @@ function startApp(): void {
   app
     .whenReady()
     .then(async () => {
-      await createWindow();
+      createWindowWithErrorHandling();
 
-      app.on('activate', async () => {
+      app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
-          await createWindow();
+          createWindowWithErrorHandling();
         }
       });
     })
