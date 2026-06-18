@@ -18,6 +18,8 @@ const DEFAULT_SUBMIT_SELECTORS = [
 type PaneRuntime = {
   service: ServiceDefinition;
   state: PaneState;
+  hasDomReady: boolean;
+  sendGeneration: number;
   article: HTMLElement;
   header: HTMLElement;
   selectedToggle: HTMLInputElement;
@@ -137,6 +139,8 @@ export function createApp(root: HTMLDivElement): void {
     const pane: PaneRuntime = {
       service,
       state: paneState,
+      hasDomReady: false,
+      sendGeneration: 0,
       article,
       header,
       selectedToggle,
@@ -157,7 +161,12 @@ export function createApp(root: HTMLDivElement): void {
 
     enabledToggle.addEventListener('change', () => {
       pane.state.enabled = enabledToggle.checked;
-      pane.state.status = enabledToggle.checked ? 'loading' : 'disabled';
+      pane.sendGeneration += 1;
+      pane.state.status = enabledToggle.checked
+        ? pane.hasDomReady
+          ? 'ready'
+          : 'loading'
+        : 'disabled';
       pane.state.errorMessage = null;
       renderPane(pane, expandedPaneId);
     });
@@ -171,8 +180,11 @@ export function createApp(root: HTMLDivElement): void {
 
     header.addEventListener('dblclick', toggleExpanded);
     body.addEventListener('dblclick', toggleExpanded);
+    webview.addEventListener('dblclick', toggleExpanded);
 
     webview.addEventListener('dom-ready', () => {
+      pane.hasDomReady = true;
+
       if (!pane.state.enabled) {
         return;
       }
@@ -239,11 +251,17 @@ async function sendPrompt(options: {
 
   await Promise.all(
     targets.map(async (pane) => {
+      const sendGeneration = pane.sendGeneration + 1;
+      pane.sendGeneration = sendGeneration;
       pane.state.status = 'sending';
       pane.state.errorMessage = null;
       renderPane(pane, options.getExpandedPaneId());
 
       if (typeof pane.webview.executeJavaScript !== 'function') {
+        if (sendGeneration !== pane.sendGeneration) {
+          return;
+        }
+
         pane.state.status = 'manual_required';
         pane.state.errorMessage = '服务视图未就绪';
         renderPane(pane, options.getExpandedPaneId());
@@ -260,6 +278,10 @@ async function sendPrompt(options: {
           true
         );
 
+        if (sendGeneration !== pane.sendGeneration) {
+          return;
+        }
+
         const normalized = normalizeDomSendResult(result);
         if (normalized) {
           pane.state.status = normalized.status;
@@ -269,6 +291,10 @@ async function sendPrompt(options: {
           pane.state.errorMessage = '需人工确认';
         }
       } catch (error) {
+        if (sendGeneration !== pane.sendGeneration) {
+          return;
+        }
+
         pane.state.status = 'error';
         pane.state.errorMessage = toShortError(error);
       }

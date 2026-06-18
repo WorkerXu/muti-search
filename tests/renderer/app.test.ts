@@ -4,6 +4,11 @@ import { createApp } from '../../src/renderer/app';
 import type { RendererWebviewElement } from '../../src/renderer/webviewTypes';
 
 type MockWebview = HTMLDivElement & RendererWebviewElement;
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
 
 function createMockExecuteJavaScript() {
   return vi.fn<(code: string, userGesture?: boolean) => Promise<unknown>>();
@@ -21,6 +26,22 @@ function attachWebviewMocks(root: HTMLDivElement) {
   });
 
   return { webviews, executeJavaScriptMocks, reloadMocks };
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('createApp', () => {
@@ -60,7 +81,7 @@ describe('createApp', () => {
     );
   });
 
-  it('sends only to selected webviews', async () => {
+  it('sends only to selected and enabled webviews', async () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -70,23 +91,26 @@ describe('createApp', () => {
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
+    const enabledToggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-pane-enabled]')
+    ) as HTMLInputElement[];
     const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
 
-    executeJavaScriptMocks[0].mockResolvedValue({ status: 'sent', errorMessage: null });
-    executeJavaScriptMocks[1].mockResolvedValue({ status: 'sent', errorMessage: null });
-    executeJavaScriptMocks[2].mockResolvedValue({ status: 'sent', errorMessage: null });
+    for (const mock of executeJavaScriptMocks) {
+      mock.mockResolvedValue({ status: 'sent', errorMessage: null });
+    }
 
     toggles[1].click();
+    enabledToggles[2].click();
     promptInput.value = 'hello renderer';
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushPromises();
 
     expect(executeJavaScriptMocks[0]).toHaveBeenCalledTimes(1);
     expect(executeJavaScriptMocks[1]).not.toHaveBeenCalled();
-    expect(executeJavaScriptMocks[2]).toHaveBeenCalledTimes(1);
+    expect(executeJavaScriptMocks[2]).not.toHaveBeenCalled();
     expect(executeJavaScriptMocks.slice(3).every((mock) => mock.mock.calls.length === 1)).toBe(true);
 
     const calledScript = executeJavaScriptMocks[0].mock.calls[0]?.[0];
@@ -104,7 +128,7 @@ describe('createApp', () => {
     expect(root.querySelector('[data-top-error]')?.textContent).toBe('请输入问题');
   });
 
-  it('toggles enlarged pane on header and pane body double click', () => {
+  it('toggles enlarged pane on header, pane body, and webview double click', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -112,11 +136,143 @@ describe('createApp', () => {
     const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
     const header = pane.querySelector('[data-pane-header]') as HTMLDivElement;
     const body = pane.querySelector('.pane-body') as HTMLDivElement;
+    const webview = pane.querySelector('webview') as MockWebview;
 
     header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('expanded');
 
     body.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('grid');
+
+    header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(pane.getAttribute('data-layout')).toBe('expanded');
+
+    webview.dispatchEvent(new MouseEvent('dblclick'));
+    expect(pane.getAttribute('data-layout')).toBe('grid');
+  });
+
+  it('re-enables a loaded pane as ready without reloading it', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { webviews, reloadMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const enabledToggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-pane-enabled]')
+    ) as HTMLInputElement[];
+
+    webviews[0].dispatchEvent(new Event('dom-ready'));
+    expect(pane.getAttribute('data-status')).toBe('ready');
+
+    enabledToggles[0].click();
+    expect(pane.getAttribute('data-status')).toBe('disabled');
+
+    enabledToggles[0].click();
+    expect(pane.getAttribute('data-status')).toBe('ready');
+    expect(reloadMocks[0]).not.toHaveBeenCalled();
+  });
+
+  it('marks a pane as manual_required when the webview api is not ready', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { webviews, executeJavaScriptMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+
+    for (const toggle of toggles.slice(1)) {
+      toggle.click();
+    }
+
+    delete (webviews[0] as Partial<RendererWebviewElement>).executeJavaScript;
+    executeJavaScriptMocks[0].mockResolvedValue({ status: 'sent', errorMessage: null });
+
+    promptInput.value = 'needs manual send';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPromises();
+
+    expect(pane.getAttribute('data-status')).toBe('manual_required');
+    expect(pane.querySelector('.pane-error')?.textContent).toBe('服务视图未就绪');
+  });
+
+  it('marks a pane as error when executeJavaScript rejects', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+
+    for (const toggle of toggles.slice(1)) {
+      toggle.click();
+    }
+
+    executeJavaScriptMocks[0].mockRejectedValue(new Error('boom failed'));
+
+    promptInput.value = 'reject please';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPromises();
+
+    expect(pane.getAttribute('data-status')).toBe('error');
+    expect(pane.querySelector('.pane-error')?.textContent).toBe('boom failed');
+  });
+
+  it('keeps the latest send result when older sends finish later', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const firstSend = createDeferred<unknown>();
+    const secondSend = createDeferred<unknown>();
+
+    for (const toggle of toggles.slice(1)) {
+      toggle.click();
+    }
+
+    executeJavaScriptMocks[0]
+      .mockReturnValueOnce(firstSend.promise)
+      .mockReturnValueOnce(secondSend.promise);
+
+    promptInput.value = 'first prompt';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    promptInput.value = 'second prompt';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    secondSend.resolve({ status: 'manual_required', errorMessage: 'latest result' });
+    await flushPromises();
+
+    expect(pane.getAttribute('data-status')).toBe('manual_required');
+    expect(pane.querySelector('.pane-error')?.textContent).toBe('latest result');
+
+    firstSend.resolve({ status: 'sent', errorMessage: null });
+    await flushPromises();
+
+    expect(pane.getAttribute('data-status')).toBe('manual_required');
+    expect(pane.querySelector('.pane-error')?.textContent).toBe('latest result');
   });
 });
