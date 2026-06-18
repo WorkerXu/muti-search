@@ -52,6 +52,7 @@ body {
 .send-button,
 .service-toggle,
 .pane-enabled-toggle,
+.pane-expand-button,
 .pane-header {
   font: inherit;
 }
@@ -140,7 +141,7 @@ body {
 
 .pane-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
@@ -200,6 +201,23 @@ body {
 
 .pane-status-dot[data-status='disabled'] {
   background: #6b7280;
+}
+
+.pane-expand-button {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pane-expand-button:hover {
+  background: #f3f4f6;
 }
 
 .pane-error {

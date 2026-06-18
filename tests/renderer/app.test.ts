@@ -196,6 +196,24 @@ describe('createApp', () => {
     expect(pane.getAttribute('data-layout')).toBe('grid');
   });
 
+  it('toggles enlarged pane with the visible expand and restore button', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const button = pane.querySelector('[data-pane-expand="chatgpt"]') as HTMLButtonElement;
+
+    expect(button.getAttribute('aria-label')).toBe('放大');
+    button.click();
+    expect(pane.getAttribute('data-layout')).toBe('expanded');
+    expect(button.getAttribute('aria-label')).toBe('还原');
+
+    button.click();
+    expect(pane.getAttribute('data-layout')).toBe('grid');
+    expect(button.getAttribute('aria-label')).toBe('放大');
+  });
+
   it('re-enables a loaded pane as ready without reloading it', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 

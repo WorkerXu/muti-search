@@ -18,6 +18,7 @@ type PaneRuntime = {
   enabledToggle: HTMLInputElement;
   enabledText: HTMLSpanElement;
   statusDot: HTMLSpanElement;
+  expandButton: HTMLButtonElement;
   errorText: HTMLSpanElement;
   webview: RendererWebviewElement;
 };
@@ -114,6 +115,12 @@ export function createApp(root: HTMLDivElement): void {
     statusDot.className = 'pane-status-dot';
     header.append(statusDot);
 
+    const expandButton = document.createElement('button');
+    expandButton.type = 'button';
+    expandButton.className = 'pane-expand-button';
+    expandButton.dataset.paneExpand = service.id;
+    header.append(expandButton);
+
     const errorText = document.createElement('span');
     errorText.className = 'pane-error';
     header.append(errorText);
@@ -139,6 +146,7 @@ export function createApp(root: HTMLDivElement): void {
       enabledToggle,
       enabledText,
       statusDot,
+      expandButton,
       errorText,
       webview
     };
@@ -169,6 +177,11 @@ export function createApp(root: HTMLDivElement): void {
         renderPane(item, expandedPaneId);
       }
     };
+
+    expandButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleExpanded();
+    });
 
     const handlePaneDoubleClick = (event: Event) => {
       event.stopPropagation();
@@ -332,6 +345,9 @@ function renderPane(pane: PaneRuntime, expandedPaneId: ServiceId | null): void {
   pane.statusDot.dataset.status = pane.state.status;
   pane.statusDot.title = statusLabels[pane.state.status];
   pane.statusDot.setAttribute('aria-label', statusLabels[pane.state.status]);
+  pane.expandButton.textContent = layout === 'expanded' ? '↙' : '⛶';
+  pane.expandButton.title = layout === 'expanded' ? '还原' : '放大';
+  pane.expandButton.setAttribute('aria-label', layout === 'expanded' ? '还原' : '放大');
   pane.errorText.textContent = pane.state.errorMessage ?? '';
   pane.webview.hidden = !pane.state.enabled;
 }
