@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      .bg { fill: #f3f4f6; }
+      .panel { fill: #ffffff; stroke: #d1d5db; stroke-width: 1; }
+      .soft { fill: #f9fafb; stroke: #e5e7eb; stroke-width: 1; }
+      .active { fill: #eaf2ff; stroke: #2f6fed; stroke-width: 1; }
+      .text { fill: #111827; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .muted { fill: #6b7280; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .tiny { font-size: 18px; }
+      .small { font-size: 22px; }
+      .normal { font-size: 26px; }
+      .title { font-size: 32px; font-weight: 700; }
+      .bold { font-weight: 700; }
+      .green { fill: #16a34a; }
+      .orange { fill: #d97706; }
+      .blue { fill: #2563eb; }
+      .red { fill: #dc2626; }
+      .line { stroke: #e5e7eb; stroke-width: 1; }
+      .icon { fill: none; stroke: #374151; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="900"/>
+
+  <rect x="32" y="28" width="1536" height="844" rx="14" class="panel"/>
+  <text x="56" y="74" class="text title">muti-search</text>
+  <text x="56" y="108" class="muted small">两种展示方式：分屏总览 + 单站大标签页</text>
+
+  <rect x="56" y="132" width="1488" height="72" rx="10" class="soft"/>
+  <rect x="76" y="148" width="520" height="40" rx="8" fill="#fff" stroke="#d1d5db"/>
+  <text x="96" y="175" class="muted small">把同一个问题发给多个 AI 服务</text>
+
+  <rect x="620" y="148" width="204" height="40" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <rect x="722" y="150" width="100" height="36" rx="8" class="active"/>
+  <text x="650" y="175" class="muted small">分屏</text>
+  <text x="750" y="175" class="text small bold">单站</text>
+
+  <rect x="850" y="148" width="154" height="40" rx="8" fill="#111827"/>
+  <text x="878" y="175" fill="#fff" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="22" font-weight="700">发送到已选</text>
+  <rect x="1020" y="148" width="76" height="40" rx="8" fill="#fff" stroke="#d1d5db"/>
+  <text x="1038" y="175" class="text small">设置</text>
+
+  <rect x="56" y="226" width="268" height="612" rx="10" class="panel"/>
+  <text x="80" y="270" class="text normal bold">网站</text>
+
+  <g transform="translate(80 300)">
+    <g>
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small">ChatGPT</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 52)">
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small">DeepSeek</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 104)">
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="orange"/>
+      <text x="32" y="31" class="text small">Grok</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 156)">
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small">豆包</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 208)">
+      <rect x="0" y="0" width="220" height="46" rx="8" class="active"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small bold">Gemini</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#bfdbfe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 260)">
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small">元宝</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+    <g transform="translate(0 312)">
+      <rect x="0" y="0" width="220" height="46" rx="8" fill="#fff"/>
+      <circle cx="14" cy="23" r="6" class="green"/>
+      <text x="32" y="31" class="text small">Perplexity</text>
+      <rect x="170" y="13" width="38" height="20" rx="10" fill="#dbeafe"/>
+      <circle cx="194" cy="23" r="8" class="blue"/>
+    </g>
+  </g>
+
+  <rect x="348" y="226" width="1196" height="612" rx="10" class="panel"/>
+  <rect x="348" y="226" width="1196" height="64" rx="10" fill="#f9fafb"/>
+  <line x1="348" y1="290" x2="1544" y2="290" class="line"/>
+  <circle cx="382" cy="258" r="7" class="green"/>
+  <text x="404" y="268" class="text normal bold">Gemini</text>
+  <rect x="1238" y="242" width="38" height="32" rx="7" fill="#fff" stroke="#d1d5db"/>
+  <path class="icon" d="M1250 258a8 8 0 1 0 3-6m-3 0h6v6"/>
+  <rect x="1288" y="242" width="38" height="32" rx="7" fill="#fff" stroke="#d1d5db"/>
+  <path class="icon" d="M1300 254h8v-8m6 16h-8v8"/>
+  <rect x="1338" y="242" width="172" height="32" rx="7" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="1362" y="265" class="text small">单站大标签页</text>
+
+  <rect x="388" y="326" width="1116" height="448" rx="12" fill="#ffffff" stroke="#e5e7eb"/>
+  <rect x="428" y="362" width="220" height="32" rx="8" fill="#e0f2fe"/>
+  <rect x="428" y="414" width="760" height="18" rx="9" fill="#e5e7eb"/>
+  <rect x="428" y="450" width="650" height="18" rx="9" fill="#e5e7eb"/>
+  <rect x="428" y="486" width="820" height="18" rx="9" fill="#e5e7eb"/>
+  <rect x="428" y="548" width="1036" height="108" rx="12" fill="#f9fafb" stroke="#e5e7eb"/>
+  <text x="456" y="610" class="muted small">这里显示当前网站的完整网页视图</text>
+  <rect x="428" y="700" width="1036" height="44" rx="22" fill="#fff" stroke="#d1d5db"/>
+  <text x="456" y="729" class="muted small">网站自身输入栏</text>
+  <circle cx="1428" cy="722" r="17" class="blue"/>
+  <path d="M1420 724l8-9 8 9M1428 716v18" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="1184" y="618" width="304" height="184" rx="10" fill="#ffffff" stroke="#cbd5e1"/>
+  <text x="1206" y="650" class="text small bold">分屏模式</text>
+  <g transform="translate(1206 668)">
+    <rect x="0" y="0" width="76" height="42" rx="6" class="soft"/>
+    <rect x="88" y="0" width="76" height="42" rx="6" class="soft"/>
+    <rect x="176" y="0" width="76" height="42" rx="6" class="soft"/>
+    <rect x="0" y="52" width="76" height="42" rx="6" class="soft"/>
+    <rect x="88" y="52" width="76" height="42" rx="6" class="soft"/>
+    <rect x="176" y="52" width="76" height="42" rx="6" class="soft"/>
+    <rect x="0" y="104" width="76" height="42" rx="6" class="soft"/>
+    <rect x="88" y="104" width="76" height="42" rx="6" class="soft"/>
+    <rect x="176" y="104" width="76" height="42" rx="6" class="soft"/>
+    <circle cx="14" cy="14" r="4" class="green"/>
+    <circle cx="102" cy="14" r="4" class="green"/>
+    <circle cx="190" cy="14" r="4" class="orange"/>
+    <circle cx="14" cy="66" r="4" class="green"/>
+    <circle cx="102" cy="66" r="4" class="green"/>
+    <circle cx="190" cy="66" r="4" class="green"/>
+    <circle cx="14" cy="118" r="4" class="green"/>
+    <circle cx="102" cy="118" r="4" class="orange"/>
+    <circle cx="190" cy="118" r="4" class="green"/>
+  </g>
+</svg>

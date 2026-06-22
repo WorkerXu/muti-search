@@ -3,7 +3,7 @@ import { SERVICE_IDS, getService, services } from '../../src/shared/services';
 import { createInitialPaneState, statusLabels } from '../../src/shared/status';
 
 describe('service registry', () => {
-  it('contains the 9 selected services in grid order', () => {
+  it('contains the selected services in grid order', () => {
     expect(SERVICE_IDS).toEqual([
       'chatgpt',
       'deepseek',
@@ -11,11 +11,9 @@ describe('service registry', () => {
       'doubao',
       'gemini',
       'yuanbao',
-      'qwen',
-      'zhipu',
       'perplexity'
     ]);
-    expect(services).toHaveLength(9);
+    expect(services).toHaveLength(7);
   });
 
   it('keeps service order and ids in sync', () => {
@@ -30,8 +28,6 @@ describe('service registry', () => {
       'persist:doubao',
       'persist:gemini',
       'persist:yuanbao',
-      'persist:qwen',
-      'persist:zhipu',
       'persist:perplexity'
     ]);
   });
@@ -71,7 +67,42 @@ describe('service registry', () => {
         submitSelectors: expect.arrayContaining(['button[aria-label*="发送"]'])
       }
     });
+    expect(getService('perplexity')).toMatchObject({
+      send: {
+        inputSelectors: expect.arrayContaining([
+          '[data-ask-input-container="true"] [contenteditable="true"][role="textbox"]'
+        ])
+      }
+    });
   });
+
+  it('stores explicit answer extraction metadata on every service', () => {
+    for (const service of services) {
+      const answer = (
+        service as {
+          answer?: { answerSelectors?: readonly string[]; busySelectors?: readonly string[] };
+        }
+      ).answer;
+
+      expect(Array.isArray(answer?.answerSelectors)).toBe(true);
+      expect(answer?.answerSelectors?.length ?? 0).toBeGreaterThan(0);
+      expect(Array.isArray(answer?.busySelectors)).toBe(true);
+      expect(answer?.busySelectors?.length ?? 0).toBeGreaterThan(0);
+    }
+
+    expect(getService('chatgpt')).toMatchObject({
+      answer: {
+        answerSelectors: expect.arrayContaining(['[data-message-author-role="assistant"]']),
+        busySelectors: expect.arrayContaining(['[data-testid="stop-button"]'])
+      }
+    });
+    expect(getService('doubao')).toMatchObject({
+      answer: {
+        answerSelectors: expect.arrayContaining(['.md-box-root'])
+      }
+    });
+  });
+
 
   it('throws a clear error for an unknown service id', () => {
     expect(() => getService('missing')).toThrow('Unknown service id: missing');

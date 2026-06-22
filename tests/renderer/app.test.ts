@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildDomSendScript } from '../../src/shared/domScript';
+import {
+  buildDomActivateSubmitScript,
+  buildDomExtractAnswerScript,
+  buildDomPromptStateScript,
+  buildDomSendTargetScript,
+  buildDomSendScript
+} from '../../src/shared/domScript';
 import { getService, services } from '../../src/shared/services';
 import { createApp } from '../../src/renderer/app';
 import type { RendererWebviewElement } from '../../src/renderer/webviewTypes';
@@ -19,16 +25,33 @@ function attachWebviewMocks(root: HTMLDivElement) {
   const webviews = Array.from(root.querySelectorAll('webview')) as MockWebview[];
 
   const executeJavaScriptMocks = webviews.map(() => createMockExecuteJavaScript());
+  const insertTextMocks = webviews.map(() => vi.fn<(text: string) => Promise<void>>());
   const loadURLMocks = webviews.map(() => vi.fn<(url: string) => Promise<void>>());
   const reloadMocks = webviews.map(() => vi.fn());
+  const replaceMocks = webviews.map(() => vi.fn<(text: string) => void>());
+  const selectAllMocks = webviews.map(() => vi.fn<() => void>());
+  const sendInputEventMocks = webviews.map(() => vi.fn<(event: unknown) => Promise<void>>());
 
   webviews.forEach((webview, index) => {
     webview.executeJavaScript = executeJavaScriptMocks[index];
+    webview.insertText = insertTextMocks[index];
     webview.loadURL = loadURLMocks[index];
     webview.reload = reloadMocks[index];
+    webview.replace = replaceMocks[index];
+    webview.selectAll = selectAllMocks[index];
+    webview.sendInputEvent = sendInputEventMocks[index];
   });
 
-  return { webviews, executeJavaScriptMocks, loadURLMocks, reloadMocks };
+  return {
+    webviews,
+    executeJavaScriptMocks,
+    insertTextMocks,
+    loadURLMocks,
+    reloadMocks,
+    replaceMocks,
+    selectAllMocks,
+    sendInputEventMocks
+  };
 }
 
 function createDeferred<T>(): Deferred<T> {
@@ -42,25 +65,112 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
+function mockSuccessfulSends(executeJavaScriptMocks: ReturnType<typeof createMockExecuteJavaScript>[]) {
+  services.forEach((service, index) => {
+    if (service.send.mode === 'physical') {
+      const mock = executeJavaScriptMocks[index]
+        .mockResolvedValueOnce({
+          status: 'ok',
+          rect: { x: 10, y: 20, width: 200, height: 40 },
+          errorMessage: null
+        })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          hasPrompt: true,
+          errorMessage: null
+        });
+
+      if (service.send.submitStrategy === 'button-only') {
+        mock.mockResolvedValueOnce({
+          status: 'activated',
+          errorMessage: null
+        });
+        return;
+      }
+
+      mock
+        .mockResolvedValueOnce({
+          status: 'ok',
+          rect: { x: 250, y: 20, width: 40, height: 40 },
+          errorMessage: null
+        })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          hasPrompt: false,
+          errorMessage: null
+        });
+      return;
+    }
+
+    executeJavaScriptMocks[index].mockResolvedValue({ status: 'sent', errorMessage: null });
+  });
+}
+
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
 }
 
+async function flushAsyncWork() {
+  await flushPromises();
+  await new Promise((resolve) => window.setTimeout(resolve, 400));
+  await flushPromises();
+}
+
+async function flushPhysicalSendWork() {
+  for (let index = 0; index < 7; index += 1) {
+    await flushAsyncWork();
+  }
+}
+
 describe('createApp', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="app"></div>';
+    delete window.mutiSearch;
   });
 
-  it('renders prompt input, send button, 9 toggles, and 9 webviews', () => {
+  it('renders prompt input, send button, service toggles, and webviews', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
 
     expect(root.querySelector('input[type="text"]')).not.toBeNull();
     expect(root.querySelector('button[type="button"]')?.textContent).toContain('发送到已选');
-    expect(root.querySelectorAll('input[type="checkbox"][data-service-toggle]')).toHaveLength(9);
-    expect(root.querySelectorAll('webview')).toHaveLength(9);
+    expect((root.querySelector('[data-testid="export-button"]') as HTMLButtonElement).hidden).toBe(
+      true
+    );
+    expect(root.querySelector('[data-testid="settings-button"]')?.textContent).toBe('设置');
+    expect(root.querySelectorAll('input[type="checkbox"][data-service-toggle]')).toHaveLength(
+      services.length
+    );
+    expect(root.querySelectorAll('webview')).toHaveLength(services.length);
+  });
+
+  it('opens read-only runtime data settings and lists static paths', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const settingsButton = root.querySelector(
+      '[data-testid="settings-button"]'
+    ) as HTMLButtonElement;
+    settingsButton.click();
+
+    const overlay = root.querySelector('[data-testid="settings-overlay"]') as HTMLElement;
+    const pathList = root.querySelector('[data-testid="runtime-path-list"]') as HTMLElement;
+
+    expect(overlay.hidden).toBe(false);
+    expect(root.querySelector('.settings-note')?.textContent).toContain('不访问目录');
+    expect(pathList.textContent).toContain(
+      '/Users/coderxu/Library/Application Support/muti-search/Partitions/chatgpt'
+    );
+    expect(pathList.textContent).toContain(
+      '/Users/coderxu/Library/Application Support/muti-search/Partitions/perplexity'
+    );
+    expect(pathList.textContent).not.toContain('正在读取');
+    expect(pathList.textContent).not.toContain('当前环境无法读取');
+    expect(pathList.textContent).not.toContain('删除');
+    expect(pathList.textContent).not.toContain('清理');
   });
 
   it('sets persistent partition and src on every webview', () => {
@@ -84,12 +194,79 @@ describe('createApp', () => {
     );
   });
 
+  it('switches between grid and single-site layouts without recreating webviews', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const originalWebviews = Array.from(root.querySelectorAll('webview'));
+    const appBody = root.querySelector('[data-testid="app-body"]') as HTMLElement;
+    const singleButton = root.querySelector('[data-testid="view-mode-single"]') as HTMLButtonElement;
+    const gridButton = root.querySelector('[data-testid="view-mode-grid"]') as HTMLButtonElement;
+
+    expect(appBody.getAttribute('data-view-mode')).toBe('grid');
+    expect(gridButton.getAttribute('aria-pressed')).toBe('true');
+    expect(singleButton.getAttribute('aria-pressed')).toBe('false');
+
+    singleButton.click();
+
+    expect(appBody.getAttribute('data-view-mode')).toBe('single');
+    expect(gridButton.getAttribute('aria-pressed')).toBe('false');
+    expect(singleButton.getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('[data-testid="service-sidebar"]')).not.toBeNull();
+    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe(
+      'single-active'
+    );
+    expect(root.querySelector('[data-pane-id="deepseek"]')?.getAttribute('data-layout')).toBe(
+      'single-hidden'
+    );
+    expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
+
+    gridButton.click();
+
+    expect(appBody.getAttribute('data-view-mode')).toBe('grid');
+    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe('grid');
+  });
+
+  it('selects the active large site from the sidebar and keeps sidebar state in sync', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const singleButton = root.querySelector('[data-testid="view-mode-single"]') as HTMLButtonElement;
+    singleButton.click();
+
+    const geminiRow = root.querySelector('[data-sidebar-service="gemini"]') as HTMLButtonElement;
+    geminiRow.click();
+
+    expect(geminiRow.getAttribute('aria-current')).toBe('true');
+    expect(root.querySelector('[data-pane-id="gemini"]')?.getAttribute('data-layout')).toBe(
+      'single-active'
+    );
+    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe(
+      'single-hidden'
+    );
+
+    const sidebarEnabled = root.querySelector(
+      '[data-sidebar-enabled="gemini"]'
+    ) as HTMLInputElement;
+    const paneEnabled = root.querySelector('[data-pane-enabled="gemini"]') as HTMLInputElement;
+
+    sidebarEnabled.click();
+
+    expect(sidebarEnabled.checked).toBe(false);
+    expect(paneEnabled.checked).toBe(false);
+    expect(root.querySelector('[data-pane-id="gemini"]')?.getAttribute('data-enabled')).toBe(
+      'false'
+    );
+  });
+
   it('sends only to selected and enabled webviews', async () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
 
-    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const { executeJavaScriptMocks, loadURLMocks } = attachWebviewMocks(root);
     const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
@@ -99,9 +276,7 @@ describe('createApp', () => {
     ) as HTMLInputElement[];
     const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
 
-    for (const mock of executeJavaScriptMocks) {
-      mock.mockResolvedValue({ status: 'sent', errorMessage: null });
-    }
+    mockSuccessfulSends(executeJavaScriptMocks);
 
     toggles[1].click();
     enabledToggles[2].click();
@@ -111,13 +286,20 @@ describe('createApp', () => {
 
     await flushPromises();
 
-    expect(executeJavaScriptMocks[0]).toHaveBeenCalledTimes(1);
+    expect(loadURLMocks[0]).toHaveBeenCalledWith(getService('chatgpt').url);
+    expect(loadURLMocks[1]).not.toHaveBeenCalled();
+    expect(loadURLMocks[2]).not.toHaveBeenCalled();
+    expect(loadURLMocks.slice(3).every((mock) => mock.mock.calls.length === 1)).toBe(true);
+    expect(executeJavaScriptMocks[0]).toHaveBeenCalled();
     expect(executeJavaScriptMocks[1]).not.toHaveBeenCalled();
     expect(executeJavaScriptMocks[2]).not.toHaveBeenCalled();
-    expect(executeJavaScriptMocks.slice(3).every((mock) => mock.mock.calls.length === 1)).toBe(true);
+    expect(executeJavaScriptMocks.slice(3).every((mock) => mock.mock.calls.length >= 1)).toBe(true);
 
-    const calledScript = executeJavaScriptMocks[0].mock.calls[0]?.[0];
-    expect(calledScript).toContain(JSON.stringify('hello renderer'));
+    const doubaoScript = executeJavaScriptMocks[3].mock.calls[0]?.[0];
+    expect(doubaoScript).toContain(JSON.stringify('hello renderer'));
+    expect(loadURLMocks[3].mock.invocationCallOrder[0]).toBeLessThan(
+      executeJavaScriptMocks[3].mock.invocationCallOrder[0]
+    );
   });
 
   it('uses each service send selector config when building the dom script', async () => {
@@ -125,7 +307,7 @@ describe('createApp', () => {
 
     createApp(root);
 
-    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const { executeJavaScriptMocks, loadURLMocks } = attachWebviewMocks(root);
     const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
@@ -155,6 +337,10 @@ describe('createApp', () => {
     await flushPromises();
 
     expect(executeJavaScriptMocks[3]).toHaveBeenCalledTimes(1);
+    expect(loadURLMocks[3]).toHaveBeenCalledWith(doubao.url);
+    expect(loadURLMocks[3].mock.invocationCallOrder[0]).toBeLessThan(
+      executeJavaScriptMocks[3].mock.invocationCallOrder[0]
+    );
     expect(executeJavaScriptMocks[3].mock.calls[0]?.[0]).toBe(
       buildDomSendScript({
         prompt: 'hello doubao',
@@ -162,6 +348,236 @@ describe('createApp', () => {
         submitSelectors: doubao.send.submitSelectors
       })
     );
+  });
+
+  it('uses physical webview input for services that reject dom-only clicks', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const {
+      executeJavaScriptMocks,
+      insertTextMocks,
+      replaceMocks,
+      selectAllMocks,
+      sendInputEventMocks
+    } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送到已选')
+    ) as HTMLButtonElement;
+    const grok = getService('grok');
+
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'grok') {
+        toggle.click();
+      }
+    }
+
+    executeJavaScriptMocks[2]
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'activated',
+        errorMessage: null
+      });
+
+    promptInput.value = 'physical hello';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(executeJavaScriptMocks[2].mock.calls[0]?.[0]).toBe(
+      buildDomSendTargetScript({
+        inputSelectors: grok.send.inputSelectors,
+        submitSelectors: grok.send.submitSelectors,
+        target: 'input'
+      })
+    );
+    expect(executeJavaScriptMocks[2].mock.calls[1]?.[0]).toBe(
+      buildDomPromptStateScript({
+        prompt: 'physical hello',
+        inputSelectors: grok.send.inputSelectors
+      })
+    );
+    expect(executeJavaScriptMocks[2].mock.calls[2]?.[0]).toBe(
+      buildDomActivateSubmitScript({
+        inputSelectors: grok.send.inputSelectors,
+        submitSelectors: grok.send.submitSelectors,
+        requireExplicitSubmit: true
+      })
+    );
+    expect(executeJavaScriptMocks[2]).toHaveBeenCalledTimes(3);
+    expect(selectAllMocks[2]).toHaveBeenCalledTimes(1);
+    expect(insertTextMocks[2]).toHaveBeenCalledWith('physical hello');
+    expect(replaceMocks[2]).not.toHaveBeenCalled();
+    expect(sendInputEventMocks[2]).toHaveBeenCalledTimes(3);
+    expect(sendInputEventMocks[2].mock.calls.map((call) => call[0])).toEqual([
+      { type: 'mouseMove', x: 110, y: 40 },
+      { type: 'mouseDown', x: 110, y: 40, button: 'left', clickCount: 1 },
+      { type: 'mouseUp', x: 110, y: 40, button: 'left', clickCount: 1 }
+    ]);
+  });
+
+  it('falls back to pressing Enter when submit clicks leave the prompt in the input', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks, sendInputEventMocks } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送到已选')
+    ) as HTMLButtonElement;
+
+    const perplexityIndex = services.findIndex((service) => service.id === 'perplexity');
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'perplexity') {
+        toggle.click();
+      }
+    }
+
+    executeJavaScriptMocks[perplexityIndex]
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 250, y: 20, width: 40, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'activated',
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      });
+
+    promptInput.value = 'enter fallback hello';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(sendInputEventMocks[perplexityIndex].mock.calls.map((call) => call[0]).slice(-3)).toEqual([
+      { type: 'rawKeyDown', keyCode: 'Enter', modifiers: ['meta'] },
+      { type: 'keyDown', keyCode: 'Enter', modifiers: ['meta'] },
+      { type: 'keyUp', keyCode: 'Enter', modifiers: ['meta'] }
+    ]);
+  });
+
+  it('reports manual required when every submit strategy leaves the prompt in place', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    const pane = root.querySelector('[data-pane-id="perplexity"]') as HTMLDivElement;
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送到已选')
+    ) as HTMLButtonElement;
+
+    const perplexityIndex = services.findIndex((service) => service.id === 'perplexity');
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'perplexity') {
+        toggle.click();
+      }
+    }
+
+    executeJavaScriptMocks[perplexityIndex]
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 250, y: 20, width: 40, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'activated',
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      });
+
+    promptInput.value = 'manual required hello';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(pane.getAttribute('data-status')).toBe('manual_required');
+    expect(pane.querySelector('.pane-error')?.textContent).toContain('已填入但未触发发送');
+    expect(pane.querySelector('.pane-error')?.textContent).toContain('prompt-still-present');
   });
 
   it('shows top error for empty prompts', () => {
@@ -173,6 +589,87 @@ describe('createApp', () => {
     sendButton.click();
 
     expect(root.querySelector('[data-top-error]')?.textContent).toBe('请输入问题');
+  });
+
+  it('shows export after sending and saves selected answers as markdown', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    const saveMarkdownExport = vi.fn().mockResolvedValue({
+      filePath: '/Users/coderxu/Downloads/muti-search-2026-06-18-120000.md'
+    });
+    window.mutiSearch = { saveMarkdownExport };
+
+    createApp(root);
+
+    const { executeJavaScriptMocks, loadURLMocks } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('发送到已选')
+    ) as HTMLButtonElement;
+    const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
+    const chatgpt = getService('chatgpt');
+
+    for (const toggle of toggles.slice(1)) {
+      toggle.click();
+    }
+
+    executeJavaScriptMocks[0]
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 250, y: 20, width: 40, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: false,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'ChatGPT answer',
+        isBusy: false,
+        errorMessage: null
+      });
+
+    promptInput.value = 'export this';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(exportButton.hidden).toBe(false);
+    expect(loadURLMocks[0]).toHaveBeenCalledWith(chatgpt.url);
+    exportButton.click();
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(executeJavaScriptMocks[0].mock.calls[4]?.[0]).toBe(
+      buildDomExtractAnswerScript({
+        prompt: 'export this',
+        answerSelectors: chatgpt.answer.answerSelectors,
+        busySelectors: chatgpt.answer.busySelectors
+      })
+    );
+    expect(saveMarkdownExport).toHaveBeenCalledTimes(1);
+    const markdown = saveMarkdownExport.mock.calls[0]?.[0]?.markdown as string;
+    expect(markdown).toContain('# muti-search 导出');
+    expect(markdown).toContain('## 问题');
+    expect(markdown).toContain('export this');
+    expect(markdown).toContain('## ChatGPT');
+    expect(markdown).toContain('ChatGPT answer');
+    expect(root.querySelector('[data-top-error]')?.textContent).toContain('已导出：');
   });
 
   it('toggles enlarged pane on header, pane body, and webview double click', () => {
@@ -317,18 +814,20 @@ describe('createApp', () => {
     createApp(root);
 
     const { executeJavaScriptMocks } = attachWebviewMocks(root);
-    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const pane = root.querySelector('[data-pane-id="deepseek"]') as HTMLDivElement;
     const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
     const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
 
-    for (const toggle of toggles.slice(1)) {
-      toggle.click();
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'deepseek') {
+        toggle.click();
+      }
     }
 
-    executeJavaScriptMocks[0].mockRejectedValue(new Error('boom failed'));
+    executeJavaScriptMocks[1].mockRejectedValue(new Error('boom failed'));
 
     promptInput.value = 'reject please';
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -346,7 +845,7 @@ describe('createApp', () => {
     createApp(root);
 
     const { executeJavaScriptMocks } = attachWebviewMocks(root);
-    const pane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLDivElement;
+    const pane = root.querySelector('[data-pane-id="deepseek"]') as HTMLDivElement;
     const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
@@ -355,30 +854,33 @@ describe('createApp', () => {
     const firstSend = createDeferred<unknown>();
     const secondSend = createDeferred<unknown>();
 
-    for (const toggle of toggles.slice(1)) {
-      toggle.click();
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'deepseek') {
+        toggle.click();
+      }
     }
 
-    executeJavaScriptMocks[0]
+    executeJavaScriptMocks[1]
       .mockReturnValueOnce(firstSend.promise)
       .mockReturnValueOnce(secondSend.promise);
 
     promptInput.value = 'first prompt';
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
+    await flushPromises();
 
     promptInput.value = 'second prompt';
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
 
     secondSend.resolve({ status: 'manual_required', errorMessage: 'latest result' });
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(pane.getAttribute('data-status')).toBe('manual_required');
     expect(pane.querySelector('.pane-error')?.textContent).toBe('latest result');
 
     firstSend.resolve({ status: 'sent', errorMessage: null });
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(pane.getAttribute('data-status')).toBe('manual_required');
     expect(pane.querySelector('.pane-error')?.textContent).toBe('latest result');

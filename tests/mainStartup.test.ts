@@ -1,11 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { getService, services } from '../src/shared/services';
 import {
+  appendDebugLog,
   getPreloadPath,
+  getDebugLogPath,
   getRendererTarget,
   isAllowedExternalUrl,
   isAllowedWebviewConfig,
+  requestSingleInstanceOrQuit,
   resolveDistRoot,
+  saveMarkdownExport,
   sanitizeWebviewPreferences
 } from '../src/main/main';
 
@@ -40,7 +47,7 @@ describe('resolveDistRoot', () => {
 describe('getPreloadPath', () => {
   it('resolves the preload bundle under the selected dist root', () => {
     expect(getPreloadPath('file:///app/dist/main/main.js', '/ignored')).toBe(
-      '/app/dist/preload/preload.js'
+      '/app/dist/preload/preload.cjs'
     );
   });
 });
@@ -97,5 +104,70 @@ describe('sanitizeWebviewPreferences', () => {
       sandbox: true,
       webSecurity: true
     });
+  });
+});
+
+describe('requestSingleInstanceOrQuit', () => {
+  it('quits when another instance already owns the lock', () => {
+    const targetApp = {
+      requestSingleInstanceLock: () => false,
+      quit: vi.fn(),
+      on: vi.fn()
+    };
+
+    expect(requestSingleInstanceOrQuit(targetApp)).toBe(false);
+    expect(targetApp.quit).toHaveBeenCalledTimes(1);
+    expect(targetApp.on).not.toHaveBeenCalled();
+  });
+
+  it('registers second-instance handling after acquiring the lock', () => {
+    const targetApp = {
+      requestSingleInstanceLock: () => true,
+      quit: vi.fn(),
+      on: vi.fn()
+    };
+
+    expect(requestSingleInstanceOrQuit(targetApp)).toBe(true);
+    expect(targetApp.quit).not.toHaveBeenCalled();
+    expect(targetApp.on).toHaveBeenCalledWith('second-instance', expect.any(Function));
+  });
+});
+
+describe('saveMarkdownExport', () => {
+  it('writes markdown to the provided downloads directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'muti-search-export-'));
+
+    try {
+      const result = await saveMarkdownExport(
+        { markdown: '# hello\n' },
+        dir,
+        new Date('2026-06-18T12:34:56')
+      );
+
+      expect(result.filePath).toBe(join(dir, 'muti-search-2026-06-18-123456.md'));
+      await expect(readFile(result.filePath, 'utf8')).resolves.toBe('# hello\n');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('appendDebugLog', () => {
+  it('writes debug messages to the user data log file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'muti-search-debug-'));
+
+    try {
+      await appendDebugLog(
+        { message: '[muti-search] {"service":"perplexity","stage":"attempt"}' },
+        dir,
+        new Date('2026-06-22T13:30:00.000Z')
+      );
+
+      await expect(readFile(getDebugLogPath(dir), 'utf8')).resolves.toBe(
+        '2026-06-22T13:30:00.000Z [muti-search] {"service":"perplexity","stage":"attempt"}\n'
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

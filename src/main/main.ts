@@ -1,6 +1,19 @@
-import { BrowserWindow, app, shell } from 'electron';
+import { BrowserWindow, app, clipboard, ipcMain, shell } from 'electron';
+import { appendFile, writeFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  BEGIN_CLIPBOARD_TEXT_PASTE_CHANNEL,
+  type ClipboardTextPastePayload,
+  type ClipboardTextPasteRestorePayload,
+  type ClipboardTextPasteResult,
+  DEBUG_LOG_CHANNEL,
+  type DebugLogPayload,
+  MARKDOWN_EXPORT_CHANNEL,
+  type MarkdownExportPayload,
+  type MarkdownExportResult,
+  RESTORE_CLIPBOARD_TEXT_PASTE_CHANNEL
+} from '../shared/exportMarkdown.js';
 import { services, type ServiceDefinition } from '../shared/services.js';
 
 type WebviewPreferences = {
@@ -36,7 +49,7 @@ export function getPreloadPath(
   currentModuleUrl: string = import.meta.url,
   cwd: string = process.cwd()
 ): string {
-  return join(resolveDistRoot(currentModuleUrl, cwd), 'preload/preload.js');
+  return join(resolveDistRoot(currentModuleUrl, cwd), 'preload/preload.cjs');
 }
 
 export type RendererTarget =
@@ -54,6 +67,7 @@ export function getRendererTarget(env: NodeJS.ProcessEnv = process.env): Rendere
 const ALLOWED_EXTERNAL_ORIGINS = new Set(
   services.map((service) => new URL(service.url).origin)
 );
+const pendingClipboardRestores = new Map<string, string>();
 
 export function isAllowedExternalUrl(url: string): boolean {
   try {
@@ -116,6 +130,119 @@ export function registerWebviewHardening(targetApp: Pick<typeof app, 'on'> = app
   });
 }
 
+function formatExportTimestamp(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join('-') + `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+export async function saveMarkdownExport(
+  payload: MarkdownExportPayload,
+  downloadsDir: string = app.getPath('downloads'),
+  now: Date = new Date()
+): Promise<MarkdownExportResult> {
+  const markdown = typeof payload.markdown === 'string' ? payload.markdown : '';
+  if (!markdown.trim()) {
+    throw new Error('导出内容为空');
+  }
+
+  const filePath = join(downloadsDir, `muti-search-${formatExportTimestamp(now)}.md`);
+  await writeFile(filePath, markdown, 'utf8');
+
+  return { filePath };
+}
+
+export function registerMarkdownExportIpc(): void {
+  ipcMain.handle(MARKDOWN_EXPORT_CHANNEL, (_event, payload: MarkdownExportPayload) =>
+    saveMarkdownExport(payload)
+  );
+}
+
+export function getDebugLogPath(userDataDir: string = app.getPath('userData')): string {
+  return join(userDataDir, 'muti-search-debug.log');
+}
+
+export async function appendDebugLog(
+  payload: DebugLogPayload,
+  userDataDir?: string,
+  now: Date = new Date()
+): Promise<void> {
+  const message = typeof payload.message === 'string' ? payload.message : '';
+  if (!message.trim()) {
+    return;
+  }
+
+  await appendFile(getDebugLogPath(userDataDir), `${now.toISOString()} ${message}\n`, 'utf8');
+}
+
+export function registerDebugLogIpc(): void {
+  ipcMain.handle(DEBUG_LOG_CHANNEL, (_event, payload: DebugLogPayload) =>
+    appendDebugLog(payload)
+  );
+}
+
+export function beginClipboardTextPaste(
+  payload: ClipboardTextPastePayload,
+  now: Date = new Date()
+): ClipboardTextPasteResult {
+  const text = typeof payload.text === 'string' ? payload.text : '';
+  const token = `${now.getTime()}-${Math.random().toString(36).slice(2)}`;
+  pendingClipboardRestores.set(token, clipboard.readText());
+  clipboard.writeText(text);
+  return { token };
+}
+
+export function restoreClipboardTextPaste(payload: ClipboardTextPasteRestorePayload): void {
+  const token = typeof payload.token === 'string' ? payload.token : '';
+  if (!pendingClipboardRestores.has(token)) {
+    return;
+  }
+
+  const previousText = pendingClipboardRestores.get(token) ?? '';
+  pendingClipboardRestores.delete(token);
+  clipboard.writeText(previousText);
+}
+
+export function registerClipboardPasteIpc(): void {
+  ipcMain.handle(
+    BEGIN_CLIPBOARD_TEXT_PASTE_CHANNEL,
+    (_event, payload: ClipboardTextPastePayload) => beginClipboardTextPaste(payload)
+  );
+  ipcMain.handle(
+    RESTORE_CLIPBOARD_TEXT_PASTE_CHANNEL,
+    (_event, payload: ClipboardTextPasteRestorePayload) => restoreClipboardTextPaste(payload)
+  );
+}
+
+export function focusExistingWindow(): void {
+  const existingWindow = BrowserWindow.getAllWindows()[0];
+  if (!existingWindow) {
+    createWindowWithErrorHandling();
+    return;
+  }
+
+  if (existingWindow.isMinimized()) {
+    existingWindow.restore();
+  }
+  existingWindow.focus();
+}
+
+export function requestSingleInstanceOrQuit(
+  targetApp: Pick<typeof app, 'quit' | 'requestSingleInstanceLock' | 'on'> = app
+): boolean {
+  if (!targetApp.requestSingleInstanceLock()) {
+    targetApp.quit();
+    return false;
+  }
+
+  targetApp.on('second-instance', focusExistingWindow);
+  return true;
+}
+
 function createWindowWithErrorHandling(): void {
   void createWindow().catch(reportStartupError);
 }
@@ -145,6 +272,12 @@ export async function createWindow(): Promise<BrowserWindow> {
     return { action: 'deny' };
   });
 
+  win.webContents.on('console-message', (_event, _level, message) => {
+    if (message.includes('[muti-search]')) {
+      console.log(message);
+    }
+  });
+
   const target = getRendererTarget();
   if (target.type === 'url') {
     await win.loadURL(target.value);
@@ -161,7 +294,14 @@ function reportStartupError(error: unknown): void {
 }
 
 function startApp(): void {
+  if (!requestSingleInstanceOrQuit()) {
+    return;
+  }
+
   registerWebviewHardening();
+  registerMarkdownExportIpc();
+  registerDebugLogIpc();
+  registerClipboardPasteIpc();
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

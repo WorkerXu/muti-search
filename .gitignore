@@ -1,3 +1,6 @@
 node_modules/
 dist/
+dist-app/
+release/
+.memsearch
 .DS_Store
