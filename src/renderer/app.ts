@@ -12,6 +12,14 @@ import {
   type DomSendTargetScriptResult,
   type DomSendScriptResult
 } from '../shared/domScript';
+import {
+  buildCodeSiteUrl,
+  codeSites,
+  normalizeGitHubRepositoryInput,
+  type CodeSiteDefinition,
+  type CodeSiteId,
+  type NormalizedRepository
+} from '../shared/codeSites';
 import type {
   ClipboardTextPastePayload,
   ClipboardTextPasteRestorePayload,
@@ -35,6 +43,7 @@ type RuntimeDataPath = Readonly<{
 }>;
 
 type ProductTab = 'search' | 'code';
+type CodePaneStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 type ExportApi = {
   saveMarkdownExport(payload: MarkdownExportPayload): Promise<MarkdownExportResult>;
@@ -78,6 +87,16 @@ type PaneRuntime = {
   webview: RendererWebviewElement;
 };
 
+type CodePaneRuntime = {
+  site: CodeSiteDefinition;
+  article: HTMLElement;
+  statusDot: HTMLSpanElement;
+  statusText: HTMLSpanElement;
+  errorText: HTMLParagraphElement;
+  webview: RendererWebviewElement;
+  status: CodePaneStatus;
+};
+
 const runtimeDataRoot = '/Users/coderxu/Library/Application Support/muti-search';
 const runtimeDataPaths: readonly RuntimeDataPath[] = Object.freeze([
   Object.freeze({
@@ -102,7 +121,11 @@ export function createApp(root: HTMLDivElement): void {
   let expandedPaneId: ServiceId | null = null;
   let lastPrompt: string | null = null;
   let lastTargetIds = new Set<ServiceId>();
+  let draftRepositoryInput = '';
+  let activeRepository: NormalizedRepository | null = null;
+  let codeInputError: string | null = null;
   const panes = new Map<ServiceId, PaneRuntime>();
+  const codePanes = new Map<CodeSiteId, CodePaneRuntime>();
 
   const shell = document.createElement('main');
   shell.className = 'app-shell';
@@ -213,17 +236,142 @@ export function createApp(root: HTMLDivElement): void {
   codeWorkflow.dataset.testid = 'code-workflow';
   appBody.append(codeWorkflow);
 
-  const codePlaceholder = document.createElement('div');
-  codePlaceholder.className = 'code-workflow-placeholder';
-  codeWorkflow.append(codePlaceholder);
+  const codeToolbar = document.createElement('div');
+  codeToolbar.className = 'code-toolbar';
+  codeWorkflow.append(codeToolbar);
 
-  const codePlaceholderTitle = document.createElement('h2');
-  codePlaceholderTitle.textContent = '代码工作流';
-  codePlaceholder.append(codePlaceholderTitle);
+  const codeRepositoryInput = document.createElement('input');
+  codeRepositoryInput.type = 'text';
+  codeRepositoryInput.className = 'code-repository-input';
+  codeRepositoryInput.dataset.testid = 'code-repository-input';
+  codeRepositoryInput.placeholder = '输入 GitHub 仓库，如 obra/superpowers';
+  codeRepositoryInput.autocomplete = 'off';
+  codeToolbar.append(codeRepositoryInput);
 
-  const codePlaceholderText = document.createElement('p');
-  codePlaceholderText.textContent = '本版本仅提供本地占位区，暂不加载远程代码站点。';
-  codePlaceholder.append(codePlaceholderText);
+  const codeOpenButton = document.createElement('button');
+  codeOpenButton.type = 'button';
+  codeOpenButton.className = 'code-open-button';
+  codeOpenButton.dataset.testid = 'code-open-button';
+  codeOpenButton.textContent = '打开仓库';
+  codeToolbar.append(codeOpenButton);
+
+  const codeRepositoryCurrent = document.createElement('p');
+  codeRepositoryCurrent.className = 'code-repository-current';
+  codeRepositoryCurrent.dataset.testid = 'code-repository-current';
+  codeWorkflow.append(codeRepositoryCurrent);
+
+  const codeRepositoryError = document.createElement('p');
+  codeRepositoryError.className = 'code-repository-error';
+  codeRepositoryError.dataset.testid = 'code-repository-error';
+  codeWorkflow.append(codeRepositoryError);
+
+  const codePaneGrid = document.createElement('section');
+  codePaneGrid.className = 'code-pane-grid';
+  codeWorkflow.append(codePaneGrid);
+
+  const setCodePaneStatus = (
+    pane: CodePaneRuntime,
+    status: CodePaneStatus,
+    errorMessage?: string
+  ) => {
+    pane.status = status;
+    pane.article.dataset.status = status;
+    pane.statusText.textContent =
+      status === 'idle'
+        ? '等待仓库'
+        : status === 'loading'
+          ? '加载中'
+          : status === 'ready'
+            ? '已就绪'
+            : '加载失败';
+    pane.errorText.textContent = errorMessage ?? '';
+  };
+
+  const renderCodeRepositoryMeta = () => {
+    codeRepositoryCurrent.textContent = activeRepository ? `当前仓库：${activeRepository}` : '';
+    codeRepositoryError.textContent = codeInputError ?? '';
+  };
+
+  const submitCodeRepository = () => {
+    const parsed = normalizeGitHubRepositoryInput(draftRepositoryInput);
+    if (!parsed.ok) {
+      codeInputError = parsed.errorMessage;
+      renderCodeRepositoryMeta();
+      return;
+    }
+
+    activeRepository = parsed.repository;
+    codeInputError = null;
+    renderCodeRepositoryMeta();
+
+    for (const pane of codePanes.values()) {
+      pane.webview.setAttribute('partition', pane.site.partition);
+      pane.webview.setAttribute('src', buildCodeSiteUrl(pane.site.id, parsed.repository));
+      setCodePaneStatus(pane, 'loading');
+    }
+  };
+
+  for (const site of codeSites) {
+    const article = document.createElement('article');
+    article.className = 'code-site-pane';
+    article.dataset.testid = `code-site-pane-${site.id}`;
+
+    const header = document.createElement('header');
+    header.className = 'code-site-header';
+    article.append(header);
+
+    const name = document.createElement('span');
+    name.className = 'code-site-name';
+    name.textContent = site.name;
+    header.append(name);
+
+    const statusDot = document.createElement('span');
+    statusDot.className = 'pane-status-dot';
+    header.append(statusDot);
+
+    const statusText = document.createElement('span');
+    statusText.className = 'code-site-status';
+    header.append(statusText);
+
+    const errorText = document.createElement('p');
+    errorText.className = 'code-site-error';
+    article.append(errorText);
+
+    const body = document.createElement('div');
+    body.className = 'code-site-body';
+    article.append(body);
+
+    const webview = document.createElement('webview');
+    webview.className = 'pane-webview';
+    webview.setAttribute('partition', site.partition);
+    body.append(webview);
+
+    const pane: CodePaneRuntime = {
+      site,
+      article,
+      statusDot,
+      statusText,
+      errorText,
+      webview,
+      status: 'idle'
+    };
+
+    webview.addEventListener('did-start-loading', () => setCodePaneStatus(pane, 'loading'));
+    webview.addEventListener('did-stop-loading', () => setCodePaneStatus(pane, 'ready'));
+    webview.addEventListener('did-fail-load', (event: Event) => {
+      const message =
+        event instanceof CustomEvent && typeof event.detail?.errorDescription === 'string'
+          ? event.detail.errorDescription
+          : '页面加载失败，请稍后重试';
+      setCodePaneStatus(pane, 'error', toShortError(message));
+    });
+
+    codePanes.set(site.id, pane);
+    codePaneGrid.append(article);
+    setCodePaneStatus(pane, 'idle');
+  }
+
+  renderCodeRepositoryMeta();
 
   const renderApp = () => {
     shell.dataset.productTab = productTab;
@@ -450,6 +598,23 @@ export function createApp(root: HTMLDivElement): void {
   promptInput.addEventListener('input', () => {
     setTopError(topError, null);
   });
+
+  codeRepositoryInput.addEventListener('input', () => {
+    draftRepositoryInput = codeRepositoryInput.value;
+    if (codeInputError) {
+      codeInputError = null;
+      renderCodeRepositoryMeta();
+    }
+  });
+
+  codeRepositoryInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitCodeRepository();
+    }
+  });
+
+  codeOpenButton.addEventListener('click', submitCodeRepository);
 
   sendButton.addEventListener('click', () => {
     void sendPrompt({

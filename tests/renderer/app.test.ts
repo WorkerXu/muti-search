@@ -6,6 +6,7 @@ import {
   buildDomSendTargetScript,
   buildDomSendScript
 } from '../../src/shared/domScript';
+import { codeSites } from '../../src/shared/codeSites';
 import { getService, services } from '../../src/shared/services';
 import { createApp } from '../../src/renderer/app';
 import type { RendererWebviewElement } from '../../src/renderer/webviewTypes';
@@ -143,7 +144,7 @@ describe('createApp', () => {
     expect(root.querySelectorAll('input[type="checkbox"][data-service-toggle]')).toHaveLength(
       services.length
     );
-    expect(root.querySelectorAll('webview')).toHaveLength(services.length);
+    expect(root.querySelectorAll('webview')).toHaveLength(services.length + codeSites.length);
   });
 
   it('opens read-only runtime data settings and lists static paths', () => {
@@ -173,12 +174,12 @@ describe('createApp', () => {
     expect(pathList.textContent).not.toContain('清理');
   });
 
-  it('sets persistent partition and src on every webview', () => {
+  it('sets persistent partition and src on every search webview', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
 
-    const webviews = Array.from(root.querySelectorAll('webview')) as MockWebview[];
+    const webviews = Array.from(root.querySelectorAll('[data-pane-id] webview')) as MockWebview[];
 
     expect(webviews).toHaveLength(services.length);
     expect(
@@ -235,7 +236,7 @@ describe('createApp', () => {
     expect(searchWorkflow.hidden).toBe(true);
     expect(codeWorkflow.hidden).toBe(false);
     expect(activePane.closest('[hidden]')).toBe(searchWorkflow);
-    expect(codeWorkflow.textContent).toContain('代码工作流');
+    expect(codeWorkflow.textContent).toContain('Zread');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
 
     searchTab.click();
@@ -262,6 +263,82 @@ describe('createApp', () => {
     expect(root.querySelector('[data-testid="view-mode-grid"]')).toBeNull();
     expect(root.querySelector('[data-testid="view-mode-single"]')).toBeNull();
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
+  });
+
+  it('does not navigate remote code sites before a valid repository is submitted', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const codeWebviews = Array.from(
+      root.querySelectorAll('[data-testid^="code-site-pane-"] webview')
+    ) as MockWebview[];
+
+    expect(codeWebviews).toHaveLength(3);
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([null, null, null]);
+    expect(codeWebviews.map((webview) => webview.getAttribute('partition'))).toEqual([
+      'persist:code-zread',
+      'persist:code-deepwiki',
+      'persist:code-codewiki'
+    ]);
+  });
+
+  it('navigates all three code sites after a valid repository submission', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    const button = root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement;
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.click();
+
+    const codeWebviews = Array.from(
+      root.querySelectorAll('[data-testid^="code-site-pane-"] webview')
+    ) as MockWebview[];
+
+    expect(root.querySelector('[data-testid="code-repository-current"]')?.textContent).toContain(
+      'obra/superpowers'
+    );
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
+  });
+
+  it('shows a validation error and preserves the previous repository pages on invalid input', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    const button = root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement;
+
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.click();
+
+    input.value = 'https://example.com/obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.click();
+
+    const codeWebviews = Array.from(
+      root.querySelectorAll('[data-testid^="code-site-pane-"] webview')
+    ) as MockWebview[];
+
+    expect(root.querySelector('[data-testid="code-repository-error"]')?.textContent).toContain(
+      '仅支持 GitHub 仓库地址或 owner/repo'
+    );
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
   });
 
   it('selects the active large site from the sidebar and keeps sidebar state in sync', () => {
@@ -322,11 +399,14 @@ describe('createApp', () => {
     expect(loadURLMocks[0]).toHaveBeenCalledWith(getService('chatgpt').url);
     expect(loadURLMocks[1]).not.toHaveBeenCalled();
     expect(loadURLMocks[2]).not.toHaveBeenCalled();
-    expect(loadURLMocks.slice(3).every((mock) => mock.mock.calls.length === 1)).toBe(true);
+    expect(loadURLMocks.slice(3, services.length).every((mock) => mock.mock.calls.length === 1))
+      .toBe(true);
     expect(executeJavaScriptMocks[0]).toHaveBeenCalled();
     expect(executeJavaScriptMocks[1]).not.toHaveBeenCalled();
     expect(executeJavaScriptMocks[2]).not.toHaveBeenCalled();
-    expect(executeJavaScriptMocks.slice(3).every((mock) => mock.mock.calls.length >= 1)).toBe(true);
+    expect(
+      executeJavaScriptMocks.slice(3, services.length).every((mock) => mock.mock.calls.length >= 1)
+    ).toBe(true);
 
     const doubaoScript = executeJavaScriptMocks[3].mock.calls[0]?.[0];
     expect(doubaoScript).toContain(JSON.stringify('hello renderer'));

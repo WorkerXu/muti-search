@@ -502,33 +502,116 @@ body {
 .code-workflow {
   min-height: 0;
   display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
 }
 
-.code-workflow-placeholder {
-  min-height: calc(100vh - 172px);
+.code-toolbar {
   display: grid;
-  align-content: center;
-  gap: 10px;
-  padding: 32px;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   background: #fff;
 }
 
-.code-workflow-placeholder h2,
-.code-workflow-placeholder p {
+.code-repository-input,
+.code-open-button {
+  height: 42px;
+  font: inherit;
+}
+
+.code-repository-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.code-open-button {
+  padding: 0 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+}
+
+.code-repository-current,
+.code-repository-error {
+  min-height: 20px;
   margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.code-workflow-placeholder h2 {
-  font-size: 20px;
-  line-height: 1.25;
+.code-repository-current {
+  color: #374151;
 }
 
-.code-workflow-placeholder p {
-  color: #4b5563;
-  font-size: 14px;
-  line-height: 1.5;
+.code-repository-error {
+  color: #b91c1c;
+}
+
+.code-pane-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.code-site-pane {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.code-site-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.code-site-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #111827;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-site-status,
+.code-site-error {
+  font-size: 12px;
+}
+
+.code-site-error {
+  min-height: 18px;
+  margin: 0;
+  padding: 6px 12px;
+  color: #b91c1c;
+}
+
+.code-site-body {
+  min-height: 0;
+}
+
+.code-site-pane[data-status="idle"] .pane-webview {
+  background:
+    linear-gradient(135deg, rgba(17, 24, 39, 0.04), rgba(17, 24, 39, 0)),
+    #fff;
 }
 
 @media (max-width: 1400px) {
