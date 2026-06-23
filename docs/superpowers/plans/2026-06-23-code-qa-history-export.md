@@ -70,7 +70,7 @@ base-ref: 5bfd297f88ce953f099e889c132a38d82994bdb5
 - Produces:
   - `export type CodeQaStatus = 'pending' | 'sending' | 'generating' | 'completed' | 'manual_required' | 'error'`
   - `export type CodeQaSendResult = { status: 'sent'; errorMessage: null } | { status: 'manual_required' | 'error'; errorMessage: string }`
-  - `export type CodeQaExtractResult = { status: 'ok' | 'error'; answerText: string; isBusy: boolean; errorMessage: string | null }`
+  - `export type CodeQaExtractResult = { status: 'ok' | 'empty' | 'error'; answerText: string; isBusy: boolean; errorMessage: string | null }`
   - `export type CodeQaExportEntry = Readonly<{ siteId: CodeSiteId; siteName: string; status: CodeQaStatus; answerText: string; errorMessage: string | null; updatedAt: string }>`
   - `export type CodeQaExportRound = Readonly<{ id: string; repository: NormalizedRepository; question: string; createdAt: string; entries: Record<CodeSiteId, CodeQaExportEntry> }>`
   - `export type CodeQaSiteConfig = Readonly<{ siteId: CodeSiteId; siteName: string; firstQuestionInputSelectors: readonly string[]; followUpInputSelectors: readonly string[]; submitSelectors: readonly string[]; answerSelectors: readonly string[]; busySelectors: readonly string[]; activationSelectors?: readonly string[]; requiresFollowUpAfterFirstRound?: boolean }>`
@@ -1079,7 +1079,7 @@ exportButton.addEventListener('click', () => {
 });
 ```
 
-- [ ] **Step 3: 运行针对性测试、全量验证和手动流程检查**
+- [x] **Step 3: 运行针对性测试、全量验证和手动流程检查**
 
 Run: `npm test -- tests/renderer/app.test.ts`
 
@@ -1103,7 +1103,13 @@ Expected: `PASS`，Electron 主进程与 renderer 构建完成，无新增 bundl
 - 切换到另一个仓库，确认历史从空开始，旧仓库问题不再出现在当前列表。
 - 点击 `导出 MD`，确认导出的 Markdown 只包含当前仓库全部轮次，且包含生成中状态和单站错误。
 
-- [ ] **Step 4: 提交导出集成与最终验证结果**
+验证记录（2026-06-23）：
+- `npm run typecheck` 通过。
+- `npm test` 通过。
+- `npm run build` 通过。
+- 使用 `./node_modules/.bin/electron --remote-debugging-port=9333 .` 在 packaged/file 模式验证 `obra/superpowers` 首问。DeepWiki 完成回答并进入 `/search/...`；CodeWiki 完成发送，抽取到 `[data-test-id="agent-message"]` 的完整回答；Zread 跳转到 `chat.z.ai/auth?sso_redirect=...`，被代码站点脚本超时保护记录为单站错误；导出按钮显示且未被 Zread 阻塞。
+
+- [x] **Step 4: 提交导出集成与最终验证结果**
 
 ```bash
 git add src/renderer/app.ts tests/renderer/app.test.ts

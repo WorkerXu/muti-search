@@ -18,7 +18,7 @@ export type CodeQaSendResult =
   | { status: 'manual_required' | 'error'; errorMessage: string };
 
 export type CodeQaExtractResult = {
-  status: 'ok' | 'error';
+  status: 'ok' | 'empty' | 'error';
   answerText: string;
   isBusy: boolean;
   errorMessage: string | null;
@@ -50,6 +50,7 @@ export type CodeQaSiteConfig = Readonly<{
   answerSelectors: readonly string[];
   busySelectors: readonly string[];
   activationSelectors?: readonly string[];
+  activationTextPattern?: string;
   requiresFollowUpAfterFirstRound?: boolean;
 }>;
 
@@ -86,7 +87,8 @@ export const codeQaSiteConfigs = Object.freeze([
       'button[aria-label="Ask AI"]',
       'button[title="Ask AI"]',
       'button'
-    ])
+    ]),
+    activationTextPattern: 'Ask AI'
   }),
   Object.freeze({
     siteId: 'deepwiki',
@@ -107,11 +109,17 @@ export const codeQaSiteConfigs = Object.freeze([
     firstQuestionInputSelectors: Object.freeze(['#message-textarea']),
     followUpInputSelectors: Object.freeze(['#message-textarea']),
     submitSelectors: Object.freeze(['button[data-test-id="send-message-button"]']),
-    answerSelectors: Object.freeze(['[data-test-id="conversation-turn-answer"]', 'main article']),
+    answerSelectors: Object.freeze([
+      '[data-test-id="agent-message"]',
+      '[data-test-id="conversation-turn-answer"]',
+      'main article'
+    ]),
     busySelectors: Object.freeze([
       'button[aria-label="Stop generating"]',
       '[data-test-id="loading-answer"]'
-    ])
+    ]),
+    activationSelectors: Object.freeze(['button[aria-label="Toggle chat"]']),
+    activationTextPattern: 'Toggle chat|Chat'
   })
 ] as const satisfies readonly CodeQaSiteConfig[]);
 
@@ -139,14 +147,17 @@ export function buildCodeQaSendScript(options: {
   });
   const debugComment = buildSelectorDebugComment(config, inputSelectors);
 
-  if (config.siteId !== 'zread' || !config.activationSelectors?.length) {
+  if (!config.activationSelectors?.length) {
     return `${debugComment}\n${sendScript}`;
   }
 
   const activationSelectors = JSON.stringify(config.activationSelectors);
+  const activationTextPattern = JSON.stringify(config.activationTextPattern ?? '');
   return `${debugComment}
 (async () => {
   const activationSelectors = ${activationSelectors};
+  const activationTextPattern = ${activationTextPattern};
+  const activationPattern = activationTextPattern ? new RegExp(activationTextPattern, 'i') : null;
   const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
   for (const selector of activationSelectors) {
@@ -164,7 +175,7 @@ export function buildCodeQaSendScript(options: {
         element.getAttribute('aria-label'),
         element.getAttribute('title')
       ].filter(Boolean).join(' ');
-      return /Ask AI/i.test(semantic);
+      return activationPattern ? activationPattern.test(semantic) : true;
     });
 
     if (button instanceof HTMLElement) {

@@ -70,6 +70,10 @@ type CodeRound = {
   entries: Record<CodeSiteId, CodeRoundEntry>;
 };
 
+const CODE_QA_EXTRACT_MAX_ATTEMPTS = 120;
+const CODE_QA_EXTRACT_RETRY_MS = 250;
+const CODE_QA_EXECUTE_TIMEOUT_MS = 20_000;
+
 type ExportApi = {
   saveMarkdownExport(payload: MarkdownExportPayload): Promise<MarkdownExportResult>;
   appendDebugLog?(payload: DebugLogPayload): Promise<void>;
@@ -477,13 +481,14 @@ export function createApp(root: HTMLDivElement): void {
 
     try {
       const sendResult = normalizeCodeQaSendResult(
-        await pane.webview.executeJavaScript(
+        await executeCodeQaJavaScript(
+          pane.webview,
           buildCodeQaSendScript({
             siteId: pane.site.id,
             question,
             isFollowUp
           }),
-          true
+          CODE_QA_EXECUTE_TIMEOUT_MS
         )
       );
 
@@ -500,15 +505,29 @@ export function createApp(root: HTMLDivElement): void {
         errorMessage: null
       });
 
-      const extractResult = normalizeCodeQaExtractResult(
-        await pane.webview.executeJavaScript(
-          buildCodeQaExtractScript({
-            siteId: pane.site.id,
-            question
-          }),
-          true
-        )
-      );
+      const extractScript = buildCodeQaExtractScript({
+        siteId: pane.site.id,
+        question
+      });
+      let extractResult: CodeQaExtractResult | null = null;
+
+      for (let attempt = 0; attempt < CODE_QA_EXTRACT_MAX_ATTEMPTS; attempt += 1) {
+        extractResult = normalizeCodeQaExtractResult(
+          await executeCodeQaJavaScript(pane.webview, extractScript, CODE_QA_EXECUTE_TIMEOUT_MS)
+        );
+
+        if (extractResult?.status === 'ok') {
+          break;
+        }
+
+        if (extractResult?.status === 'error') {
+          break;
+        }
+
+        if (attempt < CODE_QA_EXTRACT_MAX_ATTEMPTS - 1) {
+          await sleep(CODE_QA_EXTRACT_RETRY_MS);
+        }
+      }
 
       if (!extractResult || extractResult.status !== 'ok') {
         updateRoundEntry(roundId, pane.site.id, {
@@ -1476,6 +1495,42 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function executeCodeQaJavaScript(
+  webview: RendererWebviewElement,
+  script: string,
+  timeoutMs: number
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('代码站点脚本执行超时'));
+    }, timeoutMs);
+
+    webview.executeJavaScript(script, true).then(
+      (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 function rectCenter(rect: NonNullable<DomSendTargetScriptResult['rect']>): { x: number; y: number } {
   return {
     x: Math.round(rect.x + rect.width / 2),
@@ -1826,6 +1881,15 @@ function normalizeCodeQaExtractResult(value: unknown): CodeQaExtractResult | nul
   const answerText = Reflect.get(value, 'answerText');
   const isBusy = Reflect.get(value, 'isBusy');
   const errorMessage = Reflect.get(value, 'errorMessage');
+
+  if (status === 'empty') {
+    return {
+      status,
+      answerText: typeof answerText === 'string' ? answerText : '',
+      isBusy: isBusy === true,
+      errorMessage: typeof errorMessage === 'string' ? errorMessage : '未读取到回答'
+    };
+  }
 
   if (status !== 'ok' && status !== 'error') {
     return null;

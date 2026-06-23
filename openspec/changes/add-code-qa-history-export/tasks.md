@@ -32,6 +32,6 @@
 - [x] 5.1 Run `npm run typecheck`.
 - [x] 5.2 Run `npm test`.
 - [x] 5.3 Run `npm run build`.
-- [ ] 5.4 在 packaged 或 dev app 中手动验证 Chrome 已观察到的 `obra/superpowers` 流程。
+- [x] 5.4 在 packaged 或 dev app 中手动验证 Chrome 已观察到的 `obra/superpowers` 流程。
 
-备注：2026-06-23 已启动 `npm run dev`，确认 Vite 5173、Electron dev app 和主界面可打开，并捕获 `/tmp/muti-search-dev-check.png`。受当前 macOS UI 自动化权限限制，未能在 Electron WebView 中自动完成 `obra/superpowers` 三站真实问答流程；因此 5.4 保持未勾选。
+备注：2026-06-23 使用 `./node_modules/.bin/electron --remote-debugging-port=9333 .` 启动 packaged/file 模式，并通过 CDP 验证 `obra/superpowers` 流程。结果：DeepWiki 跳转到 `/search/...` 并完成回答；CodeWiki 先点击 `button[aria-label="Toggle chat"]`，再使用 `#message-textarea` 和 `button[data-test-id="send-message-button"]` 成功发送并从 `[data-test-id="agent-message"]` 抽取完整回答；Zread 当前跳转到 `chat.z.ai/auth?sso_redirect=...`，由代码站点脚本超时保护收束为单站错误，不阻塞其他站点和导出按钮。

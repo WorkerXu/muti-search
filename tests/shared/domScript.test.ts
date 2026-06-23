@@ -347,6 +347,26 @@ describe('buildDomSendScript', () => {
     });
   });
 
+  it('ignores bare CodeWiki spark icon text while extracting answers', async () => {
+    document.body.innerHTML = `
+      <section data-test-id="agent-message">spark</section>
+      <section data-test-id="agent-message">spark 真实回答内容</section>
+    `;
+
+    const result = await runDomExtractAnswerScript({
+      prompt: 'hello prompt',
+      answerSelectors: ['[data-test-id="agent-message"]'],
+      busySelectors: []
+    });
+
+    expect(result).toEqual({
+      status: 'ok',
+      answerText: '真实回答内容',
+      isBusy: false,
+      errorMessage: null
+    });
+  });
+
   it('reports busy empty answers when only a stop control is visible', async () => {
     document.body.innerHTML = '<button data-testid="stop-button">Stop</button>';
 

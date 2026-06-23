@@ -21,6 +21,9 @@ describe('codeQaSiteConfigs', () => {
     expect(getCodeQaSiteConfig('codewiki').submitSelectors).toEqual([
       'button[data-test-id="send-message-button"]'
     ]);
+    expect(getCodeQaSiteConfig('codewiki').answerSelectors).toContain(
+      '[data-test-id="agent-message"]'
+    );
   });
 
   it('adds Ask AI activation for zread before sending', () => {
@@ -33,6 +36,18 @@ describe('codeQaSiteConfigs', () => {
     expect(script).toContain('Ask AI');
     expect(script).toContain('textarea[placeholder="提出后续问题..."]');
     expect(script).toContain('button[aria-label="Send message"]');
+  });
+
+  it('opens the CodeWiki chat panel before sending', () => {
+    const script = buildCodeQaSendScript({
+      siteId: 'codewiki',
+      question: '这个项目的核心架构是什么？',
+      isFollowUp: false
+    });
+
+    expect(script).toContain('Toggle chat');
+    expect(script).toContain('#message-textarea');
+    expect(script).toContain('button[data-test-id="send-message-button"]');
   });
 
   it('switches deepwiki between question and followup selectors', () => {
