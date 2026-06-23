@@ -1,6 +1,6 @@
 # muti-search
 
-Local Electron desktop shell for viewing 9 official AI web UIs in a 3x3 grid and sending one manually entered prompt to selected services.
+Local Electron desktop shell for switching between a search workflow and a code workflow while sending one manually entered prompt to selected official AI services.
 
 ## Development
 
@@ -27,9 +27,9 @@ npm run build
 ## Manual Verification Checklist
 
 1. Run `npm run dev`.
-2. Confirm the 3x3 grid loads all selected official AI pages.
-3. Confirm each service keeps its own login state across app restarts.
+2. Confirm the app defaults to the `搜索` tab and shows the service sidebar plus one large active site.
+3. Confirm switching to the `代码` tab shows only the local placeholder area and does not create extra remote webviews.
 4. Confirm `发送到已选` only targets enabled and selected services.
 5. Confirm one failed service does not block the remaining services.
-6. Confirm double-clicking a pane/header can enlarge and collapse the pane.
-7. Confirm there is no prompt history, answer extraction panel, session-clearing UI, or keyboard shortcut layer in version 1.
+6. Confirm double-clicking a pane/header can enlarge and collapse the active site.
+7. Confirm there is no grid/split toggle, prompt history, answer extraction panel, session-clearing UI, or keyboard shortcut layer in version 1.

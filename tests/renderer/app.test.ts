@@ -194,47 +194,80 @@ describe('createApp', () => {
     );
   });
 
-  it('switches between grid and single-site layouts without recreating webviews', () => {
+  it('defaults to the search product tab and hides the legacy view mode switch', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const appBody = root.querySelector('[data-testid="app-body"]') as HTMLElement;
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+
+    expect(appBody.getAttribute('data-product-tab')).toBe('search');
+    expect(searchTab.getAttribute('aria-pressed')).toBe('true');
+    expect(codeTab.getAttribute('aria-pressed')).toBe('false');
+    expect(root.querySelector('[data-testid="view-mode-grid"]')).toBeNull();
+    expect(root.querySelector('[data-testid="view-mode-single"]')).toBeNull();
+    expect(root.querySelector('[data-testid="search-workflow"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="code-workflow"]')).not.toBeNull();
+  });
+
+  it('switches between search and code tabs without creating extra webviews', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
 
     const originalWebviews = Array.from(root.querySelectorAll('webview'));
+    const shell = root.querySelector('.app-shell') as HTMLElement;
     const appBody = root.querySelector('[data-testid="app-body"]') as HTMLElement;
-    const singleButton = root.querySelector('[data-testid="view-mode-single"]') as HTMLButtonElement;
-    const gridButton = root.querySelector('[data-testid="view-mode-grid"]') as HTMLButtonElement;
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    const searchWorkflow = root.querySelector('[data-testid="search-workflow"]') as HTMLElement;
+    const codeWorkflow = root.querySelector('[data-testid="code-workflow"]') as HTMLElement;
+    const activePane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLElement;
 
-    expect(appBody.getAttribute('data-view-mode')).toBe('grid');
-    expect(gridButton.getAttribute('aria-pressed')).toBe('true');
-    expect(singleButton.getAttribute('aria-pressed')).toBe('false');
+    codeTab.click();
 
-    singleButton.click();
-
-    expect(appBody.getAttribute('data-view-mode')).toBe('single');
-    expect(gridButton.getAttribute('aria-pressed')).toBe('false');
-    expect(singleButton.getAttribute('aria-pressed')).toBe('true');
-    expect(root.querySelector('[data-testid="service-sidebar"]')).not.toBeNull();
-    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe(
-      'single-active'
-    );
-    expect(root.querySelector('[data-pane-id="deepseek"]')?.getAttribute('data-layout')).toBe(
-      'single-hidden'
-    );
+    expect(shell.getAttribute('data-product-tab')).toBe('code');
+    expect(appBody.getAttribute('data-product-tab')).toBe('code');
+    expect(searchTab.getAttribute('aria-pressed')).toBe('false');
+    expect(codeTab.getAttribute('aria-pressed')).toBe('true');
+    expect(searchWorkflow.hidden).toBe(true);
+    expect(codeWorkflow.hidden).toBe(false);
+    expect(activePane.closest('[hidden]')).toBe(searchWorkflow);
+    expect(codeWorkflow.textContent).toContain('代码工作流');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
 
-    gridButton.click();
+    searchTab.click();
 
-    expect(appBody.getAttribute('data-view-mode')).toBe('grid');
-    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe('grid');
+    expect(shell.getAttribute('data-product-tab')).toBe('search');
+    expect(appBody.getAttribute('data-product-tab')).toBe('search');
+    expect(searchTab.getAttribute('aria-pressed')).toBe('true');
+    expect(searchWorkflow.hidden).toBe(false);
+    expect(codeWorkflow.hidden).toBe(true);
+  });
+
+  it('keeps the search workflow in single-pane mode and reuses existing webviews', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const originalWebviews = Array.from(root.querySelectorAll('webview'));
+    const chatgptPane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLElement;
+    const deepseekPane = root.querySelector('[data-pane-id="deepseek"]') as HTMLElement;
+
+    expect(root.querySelector('[data-testid="service-sidebar"]')).not.toBeNull();
+    expect(chatgptPane.getAttribute('data-layout')).toBe('single-active');
+    expect(deepseekPane.getAttribute('data-layout')).toBe('single-hidden');
+    expect(root.querySelector('[data-testid="view-mode-grid"]')).toBeNull();
+    expect(root.querySelector('[data-testid="view-mode-single"]')).toBeNull();
+    expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
   });
 
   it('selects the active large site from the sidebar and keeps sidebar state in sync', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
-
-    const singleButton = root.querySelector('[data-testid="view-mode-single"]') as HTMLButtonElement;
-    singleButton.click();
 
     const geminiRow = root.querySelector('[data-sidebar-service="gemini"]') as HTMLButtonElement;
     geminiRow.click();
@@ -686,13 +719,13 @@ describe('createApp', () => {
     expect(pane.getAttribute('data-layout')).toBe('expanded');
 
     body.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    expect(pane.getAttribute('data-layout')).toBe('grid');
+    expect(pane.getAttribute('data-layout')).toBe('single-active');
 
     header.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(pane.getAttribute('data-layout')).toBe('expanded');
 
     webview.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    expect(pane.getAttribute('data-layout')).toBe('grid');
+    expect(pane.getAttribute('data-layout')).toBe('single-active');
   });
 
   it('toggles enlarged pane with the visible expand and restore button', () => {
@@ -709,7 +742,7 @@ describe('createApp', () => {
     expect(button.getAttribute('aria-label')).toBe('还原');
 
     button.click();
-    expect(pane.getAttribute('data-layout')).toBe('grid');
+    expect(pane.getAttribute('data-layout')).toBe('single-active');
     expect(button.getAttribute('aria-label')).toBe('放大');
   });
 
