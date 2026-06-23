@@ -7,7 +7,7 @@ subagent_dispatch: null
 tdd_mode: tdd
 review_mode: standard
 isolation: branch
-verify_mode: null
+verify_mode: full
 auto_transition: true
 base_ref: 7e39eb2341c496959c7b7291a966956e42293b7f
 design_doc: docs/superpowers/specs/2026-06-23-code-repository-tab-design.md
