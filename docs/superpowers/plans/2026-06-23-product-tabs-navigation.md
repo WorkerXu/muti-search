@@ -2,6 +2,7 @@
 change: replace-view-modes-with-product-tabs
 design-doc: docs/superpowers/specs/2026-06-23-product-tabs-navigation-design.md
 base-ref: 7e39eb2341c496959c7b7291a966956e42293b7f
+archived-with: 2026-06-23-replace-view-modes-with-product-tabs
 ---
 
 # 搜索/代码产品 Tab 导航 Implementation Plan
@@ -31,6 +32,7 @@ base-ref: 7e39eb2341c496959c7b7291a966956e42293b7f
 - 设置弹层继续展示运行数据路径，只读模式不变。
 - 不创建 Zread、DeepWiki、CodeWiki WebView。
 
+archived-with: 2026-06-23-replace-view-modes-with-product-tabs
 ---
 
 ## 文件结构

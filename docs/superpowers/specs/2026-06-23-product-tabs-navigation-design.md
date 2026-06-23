@@ -2,6 +2,8 @@
 comet_change: replace-view-modes-with-product-tabs
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-23-replace-view-modes-with-product-tabs
+status: final
 ---
 
 # 搜索 / 代码产品 Tab 设计

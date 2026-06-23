@@ -17,6 +17,6 @@ verification_report: docs/superpowers/reports/2026-06-23-replace-view-modes-with
 branch_status: handled
 created_at: 2026-06-23
 verified_at: 2026-06-23
-archived: false
+archived: true
 handoff_context: openspec/changes/replace-view-modes-with-product-tabs/.comet/handoff/design-context.json
 handoff_hash: b2af27a522b1dc88d9f799332208fe2787bde20270e2f072a02d611f3bf20862
