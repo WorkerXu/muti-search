@@ -341,6 +341,39 @@ describe('createApp', () => {
     ]);
   });
 
+  it('keeps code site load failures visible after loading stops', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    const button = root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement;
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    button.click();
+
+    const deepwikiPane = root.querySelector(
+      '[data-testid="code-site-pane-deepwiki"]'
+    ) as HTMLElement;
+    const deepwikiWebview = deepwikiPane.querySelector('webview') as MockWebview;
+    const statusDot = deepwikiPane.querySelector('.pane-status-dot') as HTMLSpanElement;
+
+    deepwikiWebview.dispatchEvent(
+      new CustomEvent('did-fail-load', {
+        detail: { errorDescription: 'net::ERR_NAME_NOT_RESOLVED' }
+      })
+    );
+    deepwikiWebview.dispatchEvent(new Event('did-stop-loading'));
+
+    expect(deepwikiPane.getAttribute('data-status')).toBe('error');
+    expect(statusDot.getAttribute('data-status')).toBe('error');
+    expect(statusDot.getAttribute('aria-label')).toBe('加载失败');
+    expect(deepwikiPane.querySelector('.code-site-error')?.textContent).toContain(
+      'net::ERR_NAME_NOT_RESOLVED'
+    );
+  });
+
   it('selects the active large site from the sidebar and keeps sidebar state in sync', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 

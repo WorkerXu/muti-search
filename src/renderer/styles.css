@@ -636,6 +636,10 @@ body {
   .pane-grid {
     order: 1;
   }
+
+  .code-pane-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -645,5 +649,13 @@ body {
 
   .toggle-strip {
     grid-template-columns: 1fr;
+  }
+
+  .code-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .code-open-button {
+    width: 100%;
   }
 }

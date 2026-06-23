@@ -274,9 +274,7 @@ export function createApp(root: HTMLDivElement): void {
     status: CodePaneStatus,
     errorMessage?: string
   ) => {
-    pane.status = status;
-    pane.article.dataset.status = status;
-    pane.statusText.textContent =
+    const statusLabel =
       status === 'idle'
         ? '等待仓库'
         : status === 'loading'
@@ -284,6 +282,13 @@ export function createApp(root: HTMLDivElement): void {
           : status === 'ready'
             ? '已就绪'
             : '加载失败';
+
+    pane.status = status;
+    pane.article.dataset.status = status;
+    pane.statusDot.dataset.status = status;
+    pane.statusDot.title = statusLabel;
+    pane.statusDot.setAttribute('aria-label', statusLabel);
+    pane.statusText.textContent = statusLabel;
     pane.errorText.textContent = errorMessage ?? '';
   };
 
@@ -357,7 +362,7 @@ export function createApp(root: HTMLDivElement): void {
     };
 
     webview.addEventListener('did-start-loading', () => setCodePaneStatus(pane, 'loading'));
-    webview.addEventListener('did-stop-loading', () => setCodePaneStatus(pane, 'ready'));
+    webview.addEventListener('did-finish-load', () => setCodePaneStatus(pane, 'ready'));
     webview.addEventListener('did-fail-load', (event: Event) => {
       const message =
         event instanceof CustomEvent && typeof event.detail?.errorDescription === 'string'
