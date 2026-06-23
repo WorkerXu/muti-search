@@ -33,3 +33,5 @@
 - [x] 5.2 Run `npm test`.
 - [x] 5.3 Run `npm run build`.
 - [ ] 5.4 在 packaged 或 dev app 中手动验证 Chrome 已观察到的 `obra/superpowers` 流程。
+
+备注：2026-06-23 已启动 `npm run dev`，确认 Vite 5173、Electron dev app 和主界面可打开，并捕获 `/tmp/muti-search-dev-check.png`。受当前 macOS UI 自动化权限限制，未能在 Electron WebView 中自动完成 `obra/superpowers` 三站真实问答流程；因此 5.4 保持未勾选。
