@@ -85,6 +85,31 @@ describe('isAllowedWebviewConfig', () => {
     expect(isAllowedWebviewConfig('https://chatgpt.com', 'persist:deepseek')).toBe(false);
     expect(isAllowedWebviewConfig('not a url', 'persist:chatgpt')).toBe(false);
   });
+
+  it('allows generated code site urls with matching partitions', () => {
+    expect(isAllowedWebviewConfig('https://zread.ai/obra/superpowers', 'persist:code-zread')).toBe(
+      true
+    );
+    expect(
+      isAllowedWebviewConfig(
+        'https://codewiki.google/github.com/obra/superpowers',
+        'persist:code-codewiki'
+      )
+    ).toBe(true);
+  });
+
+  it('denies code site urls when origin, path, or partition does not match', () => {
+    expect(
+      isAllowedWebviewConfig(
+        'https://deepwiki.com/obra/superpowers/tree/main',
+        'persist:code-deepwiki'
+      )
+    ).toBe(false);
+    expect(isAllowedWebviewConfig('https://example.com/obra/superpowers', 'persist:code-deepwiki'))
+      .toBe(false);
+    expect(isAllowedWebviewConfig('https://deepwiki.com/obra/superpowers', 'persist:code-zread'))
+      .toBe(false);
+  });
 });
 
 describe('sanitizeWebviewPreferences', () => {

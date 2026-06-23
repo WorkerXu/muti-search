@@ -14,6 +14,7 @@ import {
   type MarkdownExportResult,
   RESTORE_CLIPBOARD_TEXT_PASTE_CHANNEL
 } from '../shared/exportMarkdown.js';
+import { isAllowedCodeSiteWebviewConfig } from '../shared/codeSites.js';
 import { services, type ServiceDefinition } from '../shared/services.js';
 
 type WebviewPreferences = {
@@ -83,7 +84,7 @@ export function isAllowedExternalUrl(url: string): boolean {
   }
 }
 
-export function isAllowedWebviewConfig(src: string, partition: string): boolean {
+function isAllowedServiceWebviewConfig(src: string, partition: string): boolean {
   let normalizedSrc: string;
   try {
     normalizedSrc = new URL(src).href;
@@ -98,6 +99,13 @@ export function isAllowedWebviewConfig(src: string, partition: string): boolean 
 
     return new URL(service.url).href === normalizedSrc;
   });
+}
+
+export function isAllowedWebviewConfig(src: string, partition: string): boolean {
+  return (
+    isAllowedServiceWebviewConfig(src, partition) ||
+    isAllowedCodeSiteWebviewConfig(src, partition)
+  );
 }
 
 export function sanitizeWebviewPreferences<T extends WebviewPreferences>(preferences: T): T {
