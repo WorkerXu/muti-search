@@ -134,18 +134,27 @@ describe('requestSingleInstanceOrQuit', () => {
 });
 
 describe('saveMarkdownExport', () => {
-  it('writes markdown to the provided downloads directory', async () => {
+  it('overwrites a fixed markdown file in the provided downloads directory and copies its path', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'muti-search-export-'));
+    const writeClipboardText = vi.fn();
 
     try {
       const result = await saveMarkdownExport(
         { markdown: '# hello\n' },
         dir,
-        new Date('2026-06-18T12:34:56')
+        writeClipboardText
+      );
+      const secondResult = await saveMarkdownExport(
+        { markdown: '# updated\n' },
+        dir,
+        writeClipboardText
       );
 
-      expect(result.filePath).toBe(join(dir, 'muti-search-2026-06-18-123456.md'));
-      await expect(readFile(result.filePath, 'utf8')).resolves.toBe('# hello\n');
+      expect(result.filePath).toBe(join(dir, 'muti-search-export.md'));
+      expect(secondResult.filePath).toBe(result.filePath);
+      await expect(readFile(result.filePath, 'utf8')).resolves.toBe('# updated\n');
+      expect(writeClipboardText).toHaveBeenCalledTimes(2);
+      expect(writeClipboardText).toHaveBeenLastCalledWith(result.filePath);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

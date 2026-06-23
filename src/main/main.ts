@@ -130,28 +130,21 @@ export function registerWebviewHardening(targetApp: Pick<typeof app, 'on'> = app
   });
 }
 
-function formatExportTimestamp(date: Date): string {
-  const pad = (value: number): string => String(value).padStart(2, '0');
-
-  return [
-    date.getFullYear(),
-    pad(date.getMonth() + 1),
-    pad(date.getDate())
-  ].join('-') + `-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-}
+const MARKDOWN_EXPORT_FILE_NAME = 'muti-search-export.md';
 
 export async function saveMarkdownExport(
   payload: MarkdownExportPayload,
   downloadsDir: string = app.getPath('downloads'),
-  now: Date = new Date()
+  writeClipboardText: (text: string) => void = (text) => clipboard.writeText(text)
 ): Promise<MarkdownExportResult> {
   const markdown = typeof payload.markdown === 'string' ? payload.markdown : '';
   if (!markdown.trim()) {
     throw new Error('导出内容为空');
   }
 
-  const filePath = join(downloadsDir, `muti-search-${formatExportTimestamp(now)}.md`);
+  const filePath = join(downloadsDir, MARKDOWN_EXPORT_FILE_NAME);
   await writeFile(filePath, markdown, 'utf8');
+  writeClipboardText(filePath);
 
   return { filePath };
 }

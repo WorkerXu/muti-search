@@ -594,7 +594,7 @@ describe('createApp', () => {
   it('shows export after sending and saves selected answers as markdown', async () => {
     const root = document.querySelector('#app') as HTMLDivElement;
     const saveMarkdownExport = vi.fn().mockResolvedValue({
-      filePath: '/Users/coderxu/Downloads/muti-search-2026-06-18-120000.md'
+      filePath: '/Users/coderxu/Downloads/muti-search-export.md'
     });
     window.mutiSearch = { saveMarkdownExport };
 
