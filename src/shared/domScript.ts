@@ -961,13 +961,13 @@ export function buildDomExtractAnswerScript(input: DomExtractAnswerScriptInput):
       text = text.replace(normalizedPrompt, ' ');
     }
 
-    text = text.replace(/^(ChatGPT|Gemini|DeepSeek|Grok|豆包|元宝|Perplexity)\\s*(说|回复)?\\s*[：:]?\\s*/i, '');
+    text = text.replace(/^(ChatGPT|Gemini|DeepSeek|Grok|豆包|元宝|Perplexity|spark)\\s*(说|回复)?\\s*[：:]?\\s*/i, '');
     text = text.replace(/^你说[：:]?\\s*/i, '');
     text = text.replace(/到目前为止，这段对话对你有帮助吗[？?]?/g, '');
     text = text.replace(/^(如何测试导出功能[？?]?|导出功能的测试用例有哪些[？?]?|如何保证导出数据的准确性[？?]?\\s*)+/g, '');
 
     const normalized = normalizeWhitespace(text);
-    if (/^(Gemini\\s*说|ChatGPT\\s*说|豆包|DeepSeek|Grok)$/i.test(normalized)) {
+    if (/^(Gemini\\s*说|ChatGPT\\s*说|豆包|DeepSeek|Grok|spark)$/i.test(normalized)) {
       return '';
     }
 

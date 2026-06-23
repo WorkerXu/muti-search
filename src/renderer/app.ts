@@ -20,6 +20,15 @@ import {
   type CodeSiteId,
   type NormalizedRepository
 } from '../shared/codeSites';
+import {
+  buildCodeQaExtractScript,
+  buildCodeQaSendScript,
+  formatCodeQaMarkdownExport,
+  type CodeQaExtractResult,
+  type CodeQaExportRound,
+  type CodeQaSendResult,
+  type CodeQaStatus
+} from '../shared/codeQa.js';
 import type {
   ClipboardTextPastePayload,
   ClipboardTextPasteRestorePayload,
@@ -44,6 +53,26 @@ type RuntimeDataPath = Readonly<{
 
 type ProductTab = 'search' | 'code';
 type CodePaneStatus = 'idle' | 'loading' | 'ready' | 'error';
+type CodeRoundEntry = {
+  siteId: CodeSiteId;
+  siteName: string;
+  status: CodeQaStatus;
+  answerText: string;
+  errorMessage: string | null;
+  updatedAt: string;
+};
+
+type CodeRound = {
+  id: string;
+  repository: NormalizedRepository;
+  question: string;
+  createdAt: string;
+  entries: Record<CodeSiteId, CodeRoundEntry>;
+};
+
+const CODE_QA_EXTRACT_MAX_ATTEMPTS = 120;
+const CODE_QA_EXTRACT_RETRY_MS = 250;
+const CODE_QA_EXECUTE_TIMEOUT_MS = 20_000;
 
 type ExportApi = {
   saveMarkdownExport(payload: MarkdownExportPayload): Promise<MarkdownExportResult>;
@@ -124,6 +153,9 @@ export function createApp(root: HTMLDivElement): void {
   let draftRepositoryInput = '';
   let activeRepository: NormalizedRepository | null = null;
   let codeInputError: string | null = null;
+  let codeQuestionDraft = '';
+  let codeQuestionError: string | null = null;
+  let codeRounds: CodeRound[] = [];
   const panes = new Map<ServiceId, PaneRuntime>();
   const codePanes = new Map<CodeSiteId, CodePaneRuntime>();
 
@@ -265,6 +297,35 @@ export function createApp(root: HTMLDivElement): void {
   codeRepositoryError.dataset.testid = 'code-repository-error';
   codeWorkflow.append(codeRepositoryError);
 
+  const codeQuestionToolbar = document.createElement('div');
+  codeQuestionToolbar.className = 'code-qa-toolbar';
+  codeWorkflow.append(codeQuestionToolbar);
+
+  const codeQuestionInput = document.createElement('input');
+  codeQuestionInput.type = 'text';
+  codeQuestionInput.className = 'code-qa-input';
+  codeQuestionInput.dataset.testid = 'code-question-input';
+  codeQuestionInput.placeholder = '询问当前仓库';
+  codeQuestionInput.autocomplete = 'off';
+  codeQuestionToolbar.append(codeQuestionInput);
+
+  const codeQuestionSendButton = document.createElement('button');
+  codeQuestionSendButton.type = 'button';
+  codeQuestionSendButton.className = 'code-qa-send-button';
+  codeQuestionSendButton.dataset.testid = 'code-question-send-button';
+  codeQuestionSendButton.textContent = '发送问题';
+  codeQuestionToolbar.append(codeQuestionSendButton);
+
+  const codeQuestionErrorText = document.createElement('p');
+  codeQuestionErrorText.className = 'code-qa-error';
+  codeQuestionErrorText.dataset.testid = 'code-qa-error';
+  codeWorkflow.append(codeQuestionErrorText);
+
+  const codeQaHistory = document.createElement('section');
+  codeQaHistory.className = 'code-qa-history';
+  codeQaHistory.dataset.testid = 'code-qa-history';
+  codeWorkflow.append(codeQaHistory);
+
   const codePaneGrid = document.createElement('section');
   codePaneGrid.className = 'code-pane-grid';
   codeWorkflow.append(codePaneGrid);
@@ -297,12 +358,280 @@ export function createApp(root: HTMLDivElement): void {
     codeRepositoryError.textContent = codeInputError ?? '';
   };
 
+  const renderCodeQaHistory = () => {
+    codeQuestionErrorText.textContent = codeQuestionError === null ? '' : codeQuestionError;
+    codeQaHistory.replaceChildren();
+
+    for (const round of codeRounds) {
+      const article = document.createElement('article');
+      article.className = 'code-qa-round';
+      article.dataset.testid = 'code-qa-round';
+
+      const title = document.createElement('h3');
+      title.textContent = round.question;
+      article.append(title);
+
+      const meta = document.createElement('p');
+      meta.className = 'code-qa-round-meta';
+      meta.textContent = `仓库：${round.repository}`;
+      article.append(meta);
+
+      const entryList = document.createElement('div');
+      entryList.className = 'code-qa-entry-list';
+      article.append(entryList);
+
+      for (const site of codeSites) {
+        const entry = round.entries[site.id];
+        const entryBlock = document.createElement('section');
+        entryBlock.className = 'code-qa-entry';
+        entryBlock.dataset.status = entry.status;
+
+        const entryHeader = document.createElement('div');
+        entryHeader.className = 'code-qa-entry-header';
+        entryBlock.append(entryHeader);
+
+        const siteName = document.createElement('strong');
+        siteName.textContent = entry.siteName;
+        entryHeader.append(siteName);
+
+        const status = document.createElement('span');
+        status.textContent = codeQaStatusLabel(entry.status);
+        entryHeader.append(status);
+
+        const body = document.createElement('p');
+        body.className = 'code-qa-entry-body';
+        body.textContent = entry.errorMessage || entry.answerText || '等待回答';
+        entryBlock.append(body);
+
+        entryList.append(entryBlock);
+      }
+
+      codeQaHistory.append(article);
+    }
+  };
+
+  const createCodeRound = (repository: NormalizedRepository, question: string): CodeRound => {
+    const now = new Date().toISOString();
+    const entries = Object.fromEntries(
+      codeSites.map((site) => [
+        site.id,
+        {
+          siteId: site.id,
+          siteName: site.name,
+          status: 'pending' as CodeQaStatus,
+          answerText: '',
+          errorMessage: null,
+          updatedAt: now
+        }
+      ])
+    ) as Record<CodeSiteId, CodeRoundEntry>;
+
+    return {
+      id: `code-round-${Date.now()}-${codeRounds.length + 1}`,
+      repository,
+      question,
+      createdAt: now,
+      entries
+    };
+  };
+
+  const updateRoundEntry = (
+    roundId: string,
+    siteId: CodeSiteId,
+    patch: Partial<CodeRoundEntry>
+  ) => {
+    codeRounds = codeRounds.map((round) => {
+      if (round.id !== roundId) {
+        return round;
+      }
+
+      return {
+        ...round,
+        entries: {
+          ...round.entries,
+          [siteId]: {
+            ...round.entries[siteId],
+            ...patch,
+            updatedAt: new Date().toISOString()
+          }
+        }
+      };
+    });
+    renderCodeQaHistory();
+  };
+
+  const runCodeQaForPane = async (
+    pane: CodePaneRuntime,
+    roundId: string,
+    question: string,
+    isFollowUp: boolean
+  ) => {
+    updateRoundEntry(roundId, pane.site.id, {
+      status: 'sending',
+      errorMessage: null
+    });
+
+    if (typeof pane.webview.executeJavaScript !== 'function') {
+      updateRoundEntry(roundId, pane.site.id, {
+        status: 'manual_required',
+        errorMessage: '服务视图未就绪'
+      });
+      return;
+    }
+
+    try {
+      const sendResult = normalizeCodeQaSendResult(
+        await executeCodeQaJavaScript(
+          pane.webview,
+          buildCodeQaSendScript({
+            siteId: pane.site.id,
+            question,
+            isFollowUp
+          }),
+          CODE_QA_EXECUTE_TIMEOUT_MS
+        )
+      );
+
+      if (!sendResult || sendResult.status !== 'sent') {
+        updateRoundEntry(roundId, pane.site.id, {
+          status: sendResult?.status ?? 'manual_required',
+          errorMessage: sendResult?.errorMessage ?? '需人工确认'
+        });
+        return;
+      }
+
+      updateRoundEntry(roundId, pane.site.id, {
+        status: 'generating',
+        errorMessage: null
+      });
+
+      const extractScript = buildCodeQaExtractScript({
+        siteId: pane.site.id,
+        question
+      });
+      let extractResult: CodeQaExtractResult | null = null;
+
+      for (let attempt = 0; attempt < CODE_QA_EXTRACT_MAX_ATTEMPTS; attempt += 1) {
+        extractResult = normalizeCodeQaExtractResult(
+          await executeCodeQaJavaScript(pane.webview, extractScript, CODE_QA_EXECUTE_TIMEOUT_MS)
+        );
+
+        if (extractResult?.status === 'ok') {
+          break;
+        }
+
+        if (extractResult?.status === 'error') {
+          break;
+        }
+
+        if (attempt < CODE_QA_EXTRACT_MAX_ATTEMPTS - 1) {
+          await sleep(CODE_QA_EXTRACT_RETRY_MS);
+        }
+      }
+
+      if (extractResult?.status === 'empty' && extractResult.isBusy) {
+        updateRoundEntry(roundId, pane.site.id, {
+          status: 'generating',
+          answerText: extractResult.answerText,
+          errorMessage: extractResult.errorMessage
+        });
+        return;
+      }
+
+      if (!extractResult || extractResult.status !== 'ok') {
+        updateRoundEntry(roundId, pane.site.id, {
+          status: 'error',
+          errorMessage: extractResult?.errorMessage ?? '未读取到回答'
+        });
+        return;
+      }
+
+      updateRoundEntry(roundId, pane.site.id, {
+        status: extractResult.isBusy ? 'generating' : 'completed',
+        answerText: extractResult.answerText,
+        errorMessage: extractResult.errorMessage
+      });
+    } catch (error) {
+      updateRoundEntry(roundId, pane.site.id, {
+        status: 'error',
+        errorMessage: toShortError(error)
+      });
+    }
+  };
+
+  const sendCodeQuestion = async () => {
+    const question = codeQuestionDraft.trim();
+    if (!question) {
+      codeQuestionError = '请输入代码问题';
+      renderCodeQaHistory();
+      return;
+    }
+
+    if (!activeRepository) {
+      codeQuestionError = '请先打开仓库';
+      renderCodeQaHistory();
+      return;
+    }
+
+    const isFollowUp = codeRounds.length > 0;
+    const round = createCodeRound(activeRepository, question);
+    codeRounds = [...codeRounds, round];
+    codeQuestionError = null;
+    exportButton.hidden = false;
+    renderCodeQaHistory();
+
+    await Promise.all(
+      Array.from(codePanes.values()).map((pane) =>
+        runCodeQaForPane(pane, round.id, question, isFollowUp)
+      )
+    );
+  };
+
+  const exportCodeQaHistory = async () => {
+    if (!activeRepository || codeRounds.length === 0) {
+      setTopError(topError, '没有可导出的代码问答记录');
+      return;
+    }
+
+    const exportApi = window.mutiSearch;
+    if (!exportApi) {
+      setTopError(topError, '导出通道未就绪');
+      return;
+    }
+
+    exportButton.disabled = true;
+    exportButton.textContent = '导出中';
+    setTopError(topError, null);
+
+    try {
+      const markdown = formatCodeQaMarkdownExport(
+        activeRepository,
+        codeRounds as readonly CodeQaExportRound[],
+        new Date()
+      );
+      const result = await exportApi.saveMarkdownExport({ markdown });
+      setTopError(topError, `已导出：${result.filePath}`);
+    } catch (error) {
+      setTopError(topError, toShortError(error));
+    } finally {
+      exportButton.disabled = false;
+      exportButton.textContent = '导出 MD';
+    }
+  };
+
   const submitCodeRepository = () => {
     const parsed = normalizeGitHubRepositoryInput(draftRepositoryInput);
     if (!parsed.ok) {
       codeInputError = parsed.errorMessage;
       renderCodeRepositoryMeta();
       return;
+    }
+
+    if (activeRepository !== parsed.repository) {
+      codeRounds = [];
+      codeQuestionError = null;
+      exportButton.hidden = true;
+      renderCodeQaHistory();
     }
 
     activeRepository = parsed.repository;
@@ -621,6 +950,25 @@ export function createApp(root: HTMLDivElement): void {
 
   codeOpenButton.addEventListener('click', submitCodeRepository);
 
+  codeQuestionInput.addEventListener('input', () => {
+    codeQuestionDraft = codeQuestionInput.value;
+    if (codeQuestionError) {
+      codeQuestionError = null;
+      renderCodeQaHistory();
+    }
+  });
+
+  codeQuestionInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void sendCodeQuestion();
+    }
+  });
+
+  codeQuestionSendButton.addEventListener('click', () => {
+    void sendCodeQuestion();
+  });
+
   sendButton.addEventListener('click', () => {
     void sendPrompt({
       prompt: promptInput.value,
@@ -639,6 +987,11 @@ export function createApp(root: HTMLDivElement): void {
   });
 
   exportButton.addEventListener('click', () => {
+    if (productTab === 'code') {
+      void exportCodeQaHistory();
+      return;
+    }
+
     void exportAnswers({
       prompt: lastPrompt,
       targetIds: lastTargetIds,
@@ -1150,6 +1503,42 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function executeCodeQaJavaScript(
+  webview: RendererWebviewElement,
+  script: string,
+  timeoutMs: number
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(new Error('代码站点脚本执行超时'));
+    }, timeoutMs);
+
+    webview.executeJavaScript(script, true).then(
+      (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 function rectCenter(rect: NonNullable<DomSendTargetScriptResult['rect']>): { x: number; y: number } {
   return {
     x: Math.round(rect.x + rect.width / 2),
@@ -1450,6 +1839,76 @@ function formatMarkdownExport(
   }
 
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function codeQaStatusLabel(status: CodeQaStatus): string {
+  switch (status) {
+    case 'pending':
+      return '等待中';
+    case 'sending':
+      return '发送中';
+    case 'generating':
+      return '生成中';
+    case 'completed':
+      return '已完成';
+    case 'manual_required':
+      return '需手动处理';
+    case 'error':
+      return '错误';
+  }
+}
+
+function normalizeCodeQaSendResult(value: unknown): CodeQaSendResult | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const status = Reflect.get(value, 'status');
+  const errorMessage = Reflect.get(value, 'errorMessage');
+
+  if (status === 'sent') {
+    return { status, errorMessage: null };
+  }
+
+  if (status === 'manual_required' || status === 'error') {
+    return {
+      status,
+      errorMessage: typeof errorMessage === 'string' ? errorMessage : '需人工确认'
+    };
+  }
+
+  return null;
+}
+
+function normalizeCodeQaExtractResult(value: unknown): CodeQaExtractResult | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const status = Reflect.get(value, 'status');
+  const answerText = Reflect.get(value, 'answerText');
+  const isBusy = Reflect.get(value, 'isBusy');
+  const errorMessage = Reflect.get(value, 'errorMessage');
+
+  if (status === 'empty') {
+    return {
+      status,
+      answerText: typeof answerText === 'string' ? answerText : '',
+      isBusy: isBusy === true,
+      errorMessage: typeof errorMessage === 'string' ? errorMessage : '未读取到回答'
+    };
+  }
+
+  if (status !== 'ok' && status !== 'error') {
+    return null;
+  }
+
+  return {
+    status,
+    answerText: typeof answerText === 'string' ? answerText : '',
+    isBusy: isBusy === true,
+    errorMessage: typeof errorMessage === 'string' ? errorMessage : null
+  };
 }
 
 function normalizeDomSendResult(value: unknown): DomSendScriptResult | null {

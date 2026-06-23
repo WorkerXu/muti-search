@@ -374,6 +374,529 @@ describe('createApp', () => {
     );
   });
 
+  it('shows an error and skips all code webviews when no repository is active', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+    const sendQuestionButton = root.querySelector(
+      '[data-testid="code-question-send-button"]'
+    ) as HTMLButtonElement;
+
+    questionInput.value = '这个项目的核心架构是什么？';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendQuestionButton.click();
+    await flushPromises();
+
+    expect(root.querySelector('[data-testid="code-qa-error"]')?.textContent).toContain(
+      '请先打开仓库'
+    );
+    expect(executeJavaScriptMocks.slice(-3).every((mock) => mock.mock.calls.length === 0)).toBe(
+      true
+    );
+  });
+
+  it('sends the first code question to all three code sites and creates a round', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const repositoryInput = root.querySelector(
+      '[data-testid="code-repository-input"]'
+    ) as HTMLInputElement;
+    repositoryInput.value = 'obra/superpowers';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeMocks = executeJavaScriptMocks.slice(-3);
+    codeMocks.forEach((mock, index) => {
+      mock
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: `answer-${index}`,
+          isBusy: false,
+          errorMessage: null
+        });
+    });
+
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+    questionInput.value = '第一问';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    expect(root.querySelectorAll('[data-testid="code-qa-round"]')).toHaveLength(1);
+    expect(root.querySelector('[data-testid="code-qa-round"]')?.textContent).toContain('第一问');
+    expect(codeMocks[0].mock.calls[0]?.[0]).toContain('Ask AI');
+    expect(codeMocks[1].mock.calls[0]?.[0]).toContain('textarea[data-deepwiki-input="question"]');
+    expect(codeMocks[2].mock.calls[0]?.[0]).toContain('#message-textarea');
+  });
+
+  it('keeps polling code site answers when extraction is initially empty', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const repositoryInput = root.querySelector(
+      '[data-testid="code-repository-input"]'
+    ) as HTMLInputElement;
+    repositoryInput.value = 'obra/superpowers';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeMocks = executeJavaScriptMocks.slice(-3);
+    codeMocks[0]
+      .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'zread answer',
+        isBusy: false,
+        errorMessage: null
+      });
+    codeMocks[1]
+      .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'deepwiki answer',
+        isBusy: false,
+        errorMessage: null
+      });
+    codeMocks[2]
+      .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'empty',
+        answerText: '',
+        isBusy: false,
+        errorMessage: '未读取到回答'
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'codewiki delayed answer',
+        isBusy: false,
+        errorMessage: null
+      });
+
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+    questionInput.value = '第一问';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    const codewikiEntry = Array.from(root.querySelectorAll('.code-qa-entry')).find((entry) =>
+      entry.textContent?.includes('CodeWiki')
+    ) as HTMLElement | undefined;
+
+    expect(codeMocks[2]).toHaveBeenCalledTimes(3);
+    expect(codewikiEntry?.dataset.status).toBe('completed');
+    expect(codewikiEntry?.textContent).toContain('codewiki delayed answer');
+  });
+
+  it('marks one code site as error when its injected script times out', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = document.querySelector('#app') as HTMLDivElement;
+      createApp(root);
+
+      const { executeJavaScriptMocks } = attachWebviewMocks(root);
+      (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+      const repositoryInput = root.querySelector(
+        '[data-testid="code-repository-input"]'
+      ) as HTMLInputElement;
+      repositoryInput.value = 'obra/superpowers';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+      const codeMocks = executeJavaScriptMocks.slice(-3);
+      codeMocks[0].mockReturnValue(new Promise(() => {}));
+      codeMocks[1]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'deepwiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[2]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'codewiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+
+      const questionInput = root.querySelector(
+        '[data-testid="code-question-input"]'
+      ) as HTMLInputElement;
+      questionInput.value = '第一问';
+      questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(20_100);
+      await flushPromises();
+
+      const zreadEntry = Array.from(root.querySelectorAll('.code-qa-entry')).find((entry) =>
+        entry.textContent?.includes('Zread')
+      ) as HTMLElement | undefined;
+      const codewikiEntry = Array.from(root.querySelectorAll('.code-qa-entry')).find((entry) =>
+        entry.textContent?.includes('CodeWiki')
+      ) as HTMLElement | undefined;
+
+      expect(zreadEntry?.dataset.status).toBe('error');
+      expect(zreadEntry?.textContent).toContain('代码站点脚本执行超时');
+      expect(codewikiEntry?.dataset.status).toBe('completed');
+      expect(codewikiEntry?.textContent).toContain('codewiki answer');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let an old in-flight code question reveal export after repository changes', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = document.querySelector('#app') as HTMLDivElement;
+      createApp(root);
+
+      const { executeJavaScriptMocks } = attachWebviewMocks(root);
+      (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+      const repositoryInput = root.querySelector(
+        '[data-testid="code-repository-input"]'
+      ) as HTMLInputElement;
+      const questionInput = root.querySelector(
+        '[data-testid="code-question-input"]'
+      ) as HTMLInputElement;
+      const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
+
+      repositoryInput.value = 'obra/superpowers';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+      const codeMocks = executeJavaScriptMocks.slice(-3);
+      codeMocks[0].mockReturnValue(new Promise(() => {}));
+      codeMocks[1]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'deepwiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[2]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'codewiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+
+      questionInput.value = '旧仓库问题';
+      questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(exportButton.hidden).toBe(false);
+
+      repositoryInput.value = 'openai/openai-node';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+      expect(exportButton.hidden).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(20_100);
+      await flushPromises();
+
+      expect(exportButton.hidden).toBe(true);
+      expect(root.querySelectorAll('[data-testid="code-qa-round"]')).toHaveLength(0);
+      expect(root.querySelector('[data-testid="code-repository-current"]')?.textContent).toContain(
+        'openai/openai-node'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a code site generating when answer extraction stays busy but empty', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = document.querySelector('#app') as HTMLDivElement;
+      createApp(root);
+
+      const { executeJavaScriptMocks } = attachWebviewMocks(root);
+      (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+      const repositoryInput = root.querySelector(
+        '[data-testid="code-repository-input"]'
+      ) as HTMLInputElement;
+      repositoryInput.value = 'obra/superpowers';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+      const codeMocks = executeJavaScriptMocks.slice(-3);
+      codeMocks[0]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'zread answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[1]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'deepwiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[2]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValue({
+          status: 'empty',
+          answerText: '',
+          isBusy: true,
+          errorMessage: '回答可能仍在生成中'
+        });
+
+      const questionInput = root.querySelector(
+        '[data-testid="code-question-input"]'
+      ) as HTMLInputElement;
+      questionInput.value = '第一问';
+      questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flushPromises();
+
+      const codewikiEntry = Array.from(root.querySelectorAll('.code-qa-entry')).find((entry) =>
+        entry.textContent?.includes('CodeWiki')
+      ) as HTMLElement | undefined;
+
+      expect(codewikiEntry?.dataset.status).toBe('generating');
+      expect(codewikiEntry?.textContent).toContain('回答可能仍在生成中');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the current pages for follow-up questions and switches deepwiki to the followup selector', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { executeJavaScriptMocks, loadURLMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const repositoryInput = root.querySelector(
+      '[data-testid="code-repository-input"]'
+    ) as HTMLInputElement;
+    repositoryInput.value = 'obra/superpowers';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeMocks = executeJavaScriptMocks.slice(-3);
+    codeMocks.forEach((mock) => {
+      mock
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'round-1',
+          isBusy: false,
+          errorMessage: null
+        })
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'round-2',
+          isBusy: false,
+          errorMessage: null
+        });
+    });
+
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+
+    questionInput.value = '第一问';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    questionInput.value = '第二问';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    expect(root.querySelectorAll('[data-testid="code-qa-round"]')).toHaveLength(2);
+    expect(loadURLMocks.slice(-3).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+    expect(codeMocks[1].mock.calls[2]?.[0]).toContain(
+      'textarea[data-deepwiki-input="followup"]'
+    );
+  });
+
+  it('starts a new in-memory session after repository change and keeps old rounds out of the current history', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const repositoryInput = root.querySelector(
+      '[data-testid="code-repository-input"]'
+    ) as HTMLInputElement;
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+
+    repositoryInput.value = 'obra/superpowers';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    executeJavaScriptMocks.slice(-3).forEach((mock) => {
+      mock
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'old answer',
+          isBusy: false,
+          errorMessage: null
+        })
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'new answer',
+          isBusy: false,
+          errorMessage: null
+        });
+    });
+
+    questionInput.value = '旧仓库问题';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    repositoryInput.value = 'openai/openai-node';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    expect((root.querySelector('[data-testid="export-button"]') as HTMLButtonElement).hidden).toBe(
+      true
+    );
+
+    questionInput.value = '新仓库问题';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    const rounds = Array.from(root.querySelectorAll('[data-testid="code-qa-round"]'));
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]?.textContent).toContain('新仓库问题');
+    expect(rounds[0]?.textContent).not.toContain('旧仓库问题');
+    expect(root.querySelector('[data-testid="code-repository-current"]')?.textContent).toContain(
+      'openai/openai-node'
+    );
+  });
+
+  it('shows a code export error without calling ipc when the current repository has no rounds', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    const saveMarkdownExport = vi.fn();
+    window.mutiSearch = { saveMarkdownExport };
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+    (root.querySelector('[data-testid="export-button"]') as HTMLButtonElement).click();
+
+    await flushPromises();
+
+    expect(saveMarkdownExport).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-top-error]')?.textContent).toBe('没有可导出的代码问答记录');
+  });
+
+  it('exports current repository code qa rounds with stored answers and site errors', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    const saveMarkdownExport = vi.fn().mockResolvedValue({
+      filePath: '/Users/coderxu/Downloads/muti-search-export.md'
+    });
+    window.mutiSearch = { saveMarkdownExport };
+    createApp(root);
+
+    const { executeJavaScriptMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const repositoryInput = root.querySelector(
+      '[data-testid="code-repository-input"]'
+    ) as HTMLInputElement;
+    repositoryInput.value = 'obra/superpowers';
+    repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeMocks = executeJavaScriptMocks.slice(-3);
+    codeMocks[0]
+      .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'Zread stored answer',
+        isBusy: false,
+        errorMessage: null
+      });
+    codeMocks[1]
+      .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        answerText: 'DeepWiki partial answer',
+        isBusy: true,
+        errorMessage: null
+      });
+    codeMocks[2].mockResolvedValueOnce({
+      status: 'manual_required',
+      errorMessage: '服务视图未就绪'
+    });
+
+    const questionInput = root.querySelector(
+      '[data-testid="code-question-input"]'
+    ) as HTMLInputElement;
+    questionInput.value = '这个项目的核心架构是什么？';
+    questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+    await flushAsyncWork();
+
+    const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
+    expect(exportButton.hidden).toBe(false);
+    exportButton.click();
+    await flushPromises();
+
+    expect(saveMarkdownExport).toHaveBeenCalledTimes(1);
+    const markdown = saveMarkdownExport.mock.calls[0]?.[0]?.markdown as string;
+    expect(markdown).toContain('# muti-search 代码问答导出');
+    expect(markdown).toContain('- 仓库：obra/superpowers');
+    expect(markdown).toContain('## 第 1 轮');
+    expect(markdown).toContain('这个项目的核心架构是什么？');
+    expect(markdown).toContain('Zread stored answer');
+    expect(markdown).toContain('状态：生成中');
+    expect(markdown).toContain('DeepWiki partial answer');
+    expect(markdown).toContain('错误：服务视图未就绪');
+    expect(root.querySelector('[data-top-error]')?.textContent).toContain('已导出：');
+  });
+
   it('selects the active large site from the sidebar and keeps sidebar state in sync', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
