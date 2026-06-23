@@ -34,7 +34,7 @@ type RuntimeDataPath = Readonly<{
   path: string;
 }>;
 
-type ViewMode = 'grid' | 'single';
+type ProductTab = 'search' | 'code';
 
 type ExportApi = {
   saveMarkdownExport(payload: MarkdownExportPayload): Promise<MarkdownExportResult>;
@@ -97,7 +97,7 @@ const runtimeDataPaths: readonly RuntimeDataPath[] = Object.freeze([
 export function createApp(root: HTMLDivElement): void {
   root.innerHTML = '';
 
-  let viewMode: ViewMode = 'grid';
+  let productTab: ProductTab = 'search';
   let activePaneId: ServiceId = services[0].id;
   let expandedPaneId: ServiceId | null = null;
   let lastPrompt: string | null = null;
@@ -127,22 +127,22 @@ export function createApp(root: HTMLDivElement): void {
   toggleStrip.className = 'toggle-strip';
   topBar.append(toggleStrip);
 
-  const viewModeSwitch = document.createElement('div');
-  viewModeSwitch.className = 'view-mode-switch';
-  viewModeSwitch.setAttribute('aria-label', '展示方式');
-  topBar.append(viewModeSwitch);
+  const productTabSwitch = document.createElement('div');
+  productTabSwitch.className = 'product-tab-switch';
+  productTabSwitch.setAttribute('aria-label', '产品工作流');
+  topBar.append(productTabSwitch);
 
-  const gridModeButton = document.createElement('button');
-  gridModeButton.className = 'view-mode-button';
-  gridModeButton.dataset.testid = 'view-mode-grid';
-  gridModeButton.textContent = '分屏';
-  viewModeSwitch.append(gridModeButton);
+  const searchTabButton = document.createElement('button');
+  searchTabButton.className = 'product-tab-button';
+  searchTabButton.dataset.testid = 'product-tab-search';
+  searchTabButton.textContent = '搜索';
+  productTabSwitch.append(searchTabButton);
 
-  const singleModeButton = document.createElement('button');
-  singleModeButton.className = 'view-mode-button';
-  singleModeButton.dataset.testid = 'view-mode-single';
-  singleModeButton.textContent = '单站';
-  viewModeSwitch.append(singleModeButton);
+  const codeTabButton = document.createElement('button');
+  codeTabButton.className = 'product-tab-button';
+  codeTabButton.dataset.testid = 'product-tab-code';
+  codeTabButton.textContent = '代码';
+  productTabSwitch.append(codeTabButton);
 
   const sendButton = document.createElement('button');
   sendButton.type = 'button';
@@ -186,10 +186,15 @@ export function createApp(root: HTMLDivElement): void {
   appBody.dataset.testid = 'app-body';
   shell.append(appBody);
 
+  const searchWorkflow = document.createElement('section');
+  searchWorkflow.className = 'search-workflow';
+  searchWorkflow.dataset.testid = 'search-workflow';
+  appBody.append(searchWorkflow);
+
   const sidebar = document.createElement('aside');
   sidebar.className = 'service-sidebar';
   sidebar.dataset.testid = 'service-sidebar';
-  appBody.append(sidebar);
+  searchWorkflow.append(sidebar);
 
   const sidebarTitle = document.createElement('h2');
   sidebarTitle.textContent = '网站';
@@ -201,15 +206,34 @@ export function createApp(root: HTMLDivElement): void {
 
   const grid = document.createElement('section');
   grid.className = 'pane-grid';
-  appBody.append(grid);
+  searchWorkflow.append(grid);
+
+  const codeWorkflow = document.createElement('section');
+  codeWorkflow.className = 'code-workflow';
+  codeWorkflow.dataset.testid = 'code-workflow';
+  appBody.append(codeWorkflow);
+
+  const codePlaceholder = document.createElement('div');
+  codePlaceholder.className = 'code-workflow-placeholder';
+  codeWorkflow.append(codePlaceholder);
+
+  const codePlaceholderTitle = document.createElement('h2');
+  codePlaceholderTitle.textContent = '代码工作流';
+  codePlaceholder.append(codePlaceholderTitle);
+
+  const codePlaceholderText = document.createElement('p');
+  codePlaceholderText.textContent = '本版本仅提供本地占位区，暂不加载远程代码站点。';
+  codePlaceholder.append(codePlaceholderText);
 
   const renderApp = () => {
-    shell.dataset.viewMode = viewMode;
-    appBody.dataset.viewMode = viewMode;
-    gridModeButton.setAttribute('aria-pressed', String(viewMode === 'grid'));
-    singleModeButton.setAttribute('aria-pressed', String(viewMode === 'single'));
+    shell.dataset.productTab = productTab;
+    appBody.dataset.productTab = productTab;
+    searchWorkflow.hidden = productTab !== 'search';
+    codeWorkflow.hidden = productTab !== 'code';
+    searchTabButton.setAttribute('aria-pressed', String(productTab === 'search'));
+    codeTabButton.setAttribute('aria-pressed', String(productTab === 'code'));
     for (const pane of panes.values()) {
-      renderPane(pane, expandedPaneId, viewMode, activePaneId);
+      renderPane(pane, expandedPaneId, activePaneId);
     }
   };
 
@@ -374,7 +398,7 @@ export function createApp(root: HTMLDivElement): void {
 
     homeButton.addEventListener('click', (event) => {
       event.stopPropagation();
-      navigatePaneHome(pane, () => renderPane(pane, expandedPaneId, viewMode, activePaneId));
+      navigatePaneHome(pane, () => renderPane(pane, expandedPaneId, activePaneId));
     });
 
     expandButton.addEventListener('click', (event) => {
@@ -420,7 +444,7 @@ export function createApp(root: HTMLDivElement): void {
       renderApp();
     });
 
-    renderPane(pane, expandedPaneId, viewMode, activePaneId);
+    renderPane(pane, expandedPaneId, activePaneId);
   }
 
   promptInput.addEventListener('input', () => {
@@ -432,7 +456,7 @@ export function createApp(root: HTMLDivElement): void {
       prompt: promptInput.value,
       panes,
       setTopError: (message) => setTopError(topError, message),
-      renderPane: (pane) => renderPane(pane, expandedPaneId, viewMode, activePaneId)
+      renderPane: (pane) => renderPane(pane, expandedPaneId, activePaneId)
     }).then((targetIds) => {
       if (targetIds.length === 0) {
         return;
@@ -454,13 +478,13 @@ export function createApp(root: HTMLDivElement): void {
     });
   });
 
-  gridModeButton.addEventListener('click', () => {
-    viewMode = 'grid';
+  searchTabButton.addEventListener('click', () => {
+    productTab = 'search';
     renderApp();
   });
 
-  singleModeButton.addEventListener('click', () => {
-    viewMode = 'single';
+  codeTabButton.addEventListener('click', () => {
+    productTab = 'code';
     expandedPaneId = null;
     renderApp();
   });
@@ -1374,19 +1398,16 @@ function normalizeDomSendTargetResult(value: unknown): DomSendTargetScriptResult
 function renderPane(
   pane: PaneRuntime,
   expandedPaneId: ServiceId | null,
-  viewMode: ViewMode,
   activePaneId: ServiceId
 ): void {
   const layout =
-    viewMode === 'single'
+    expandedPaneId === null
       ? activePaneId === pane.service.id
         ? 'single-active'
         : 'single-hidden'
-      : expandedPaneId === null
-        ? 'grid'
-        : expandedPaneId === pane.service.id
-          ? 'expanded'
-          : 'collapsed';
+      : expandedPaneId === pane.service.id
+        ? 'expanded'
+        : 'collapsed';
   pane.article.dataset.layout = layout;
   pane.article.dataset.status = pane.state.status;
   pane.article.dataset.selected = String(pane.state.selected);
@@ -1402,7 +1423,7 @@ function renderPane(
   pane.sidebarStatusDot.dataset.status = pane.state.status;
   pane.sidebarStatusDot.title = statusLabels[pane.state.status];
   pane.sidebarStatusDot.setAttribute('aria-label', statusLabels[pane.state.status]);
-  pane.sidebarButton.setAttribute('aria-current', String(viewMode === 'single' && activePaneId === pane.service.id));
+  pane.sidebarButton.setAttribute('aria-current', String(activePaneId === pane.service.id));
   pane.homeButton.textContent = '↻';
   pane.homeButton.title = '回主页';
   pane.homeButton.setAttribute('aria-label', '回主页');
