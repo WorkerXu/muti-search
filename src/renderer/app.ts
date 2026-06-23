@@ -529,6 +529,15 @@ export function createApp(root: HTMLDivElement): void {
         }
       }
 
+      if (extractResult?.status === 'empty' && extractResult.isBusy) {
+        updateRoundEntry(roundId, pane.site.id, {
+          status: 'generating',
+          answerText: extractResult.answerText,
+          errorMessage: extractResult.errorMessage
+        });
+        return;
+      }
+
       if (!extractResult || extractResult.status !== 'ok') {
         updateRoundEntry(roundId, pane.site.id, {
           status: 'error',
@@ -568,6 +577,7 @@ export function createApp(root: HTMLDivElement): void {
     const round = createCodeRound(activeRepository, question);
     codeRounds = [...codeRounds, round];
     codeQuestionError = null;
+    exportButton.hidden = false;
     renderCodeQaHistory();
 
     await Promise.all(
@@ -575,8 +585,6 @@ export function createApp(root: HTMLDivElement): void {
         runCodeQaForPane(pane, round.id, question, isFollowUp)
       )
     );
-
-    exportButton.hidden = false;
   };
 
   const exportCodeQaHistory = async () => {

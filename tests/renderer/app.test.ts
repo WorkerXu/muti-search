@@ -568,6 +568,137 @@ describe('createApp', () => {
     }
   });
 
+  it('does not let an old in-flight code question reveal export after repository changes', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = document.querySelector('#app') as HTMLDivElement;
+      createApp(root);
+
+      const { executeJavaScriptMocks } = attachWebviewMocks(root);
+      (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+      const repositoryInput = root.querySelector(
+        '[data-testid="code-repository-input"]'
+      ) as HTMLInputElement;
+      const questionInput = root.querySelector(
+        '[data-testid="code-question-input"]'
+      ) as HTMLInputElement;
+      const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
+
+      repositoryInput.value = 'obra/superpowers';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+      const codeMocks = executeJavaScriptMocks.slice(-3);
+      codeMocks[0].mockReturnValue(new Promise(() => {}));
+      codeMocks[1]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'deepwiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[2]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'codewiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+
+      questionInput.value = '旧仓库问题';
+      questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+      await flushPromises();
+
+      expect(exportButton.hidden).toBe(false);
+
+      repositoryInput.value = 'openai/openai-node';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+      expect(exportButton.hidden).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(20_100);
+      await flushPromises();
+
+      expect(exportButton.hidden).toBe(true);
+      expect(root.querySelectorAll('[data-testid="code-qa-round"]')).toHaveLength(0);
+      expect(root.querySelector('[data-testid="code-repository-current"]')?.textContent).toContain(
+        'openai/openai-node'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a code site generating when answer extraction stays busy but empty', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const root = document.querySelector('#app') as HTMLDivElement;
+      createApp(root);
+
+      const { executeJavaScriptMocks } = attachWebviewMocks(root);
+      (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+      const repositoryInput = root.querySelector(
+        '[data-testid="code-repository-input"]'
+      ) as HTMLInputElement;
+      repositoryInput.value = 'obra/superpowers';
+      repositoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+      const codeMocks = executeJavaScriptMocks.slice(-3);
+      codeMocks[0]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'zread answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[1]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValueOnce({
+          status: 'ok',
+          answerText: 'deepwiki answer',
+          isBusy: false,
+          errorMessage: null
+        });
+      codeMocks[2]
+        .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
+        .mockResolvedValue({
+          status: 'empty',
+          answerText: '',
+          isBusy: true,
+          errorMessage: '回答可能仍在生成中'
+        });
+
+      const questionInput = root.querySelector(
+        '[data-testid="code-question-input"]'
+      ) as HTMLInputElement;
+      questionInput.value = '第一问';
+      questionInput.dispatchEvent(new Event('input', { bubbles: true }));
+      (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
+
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flushPromises();
+
+      const codewikiEntry = Array.from(root.querySelectorAll('.code-qa-entry')).find((entry) =>
+        entry.textContent?.includes('CodeWiki')
+      ) as HTMLElement | undefined;
+
+      expect(codewikiEntry?.dataset.status).toBe('generating');
+      expect(codewikiEntry?.textContent).toContain('回答可能仍在生成中');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the current pages for follow-up questions and switches deepwiki to the followup selector', async () => {
     const root = document.querySelector('#app') as HTMLDivElement;
     createApp(root);
