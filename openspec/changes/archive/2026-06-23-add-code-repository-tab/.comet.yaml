@@ -17,6 +17,6 @@ verification_report: docs/superpowers/reports/2026-06-23-add-code-repository-tab
 branch_status: handled
 created_at: 2026-06-23
 verified_at: 2026-06-23
-archived: false
+archived: true
 handoff_context: openspec/changes/add-code-repository-tab/.comet/handoff/design-context.json
 handoff_hash: 2f2c10050728787e13d9d83ae5956347db60225913d9a8f11b0a1f66348e1747

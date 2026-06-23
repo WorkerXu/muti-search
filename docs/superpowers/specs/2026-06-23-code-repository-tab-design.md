@@ -2,6 +2,8 @@
 comet_change: add-code-repository-tab
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-23-add-code-repository-tab
+status: final
 ---
 
 # 代码仓库 Tab 路由设计

@@ -2,6 +2,7 @@
 change: add-code-repository-tab
 design-doc: docs/superpowers/specs/2026-06-23-code-repository-tab-design.md
 base-ref: 64aeb239b6c5501cc82cd8c8810f354b90a1964d
+archived-with: 2026-06-23-add-code-repository-tab
 ---
 
 # 代码仓库 Tab 实施计划
@@ -24,8 +25,6 @@ base-ref: 64aeb239b6c5501cc82cd8c8810f354b90a1964d
 - `isAllowedWebviewConfig()` 必须继续允许既有搜索站点精确主页 URL，同时新增代码站点的 origin、path、partition 三重校验，拒绝任意 origin、任意路径和 partition 不匹配。
 - 本 change 不实现代码站点问答发送、历史导出、WebView 生命周期优化、私有仓库认证，也不改变搜索工作流的发送逻辑。
 - 全程遵循 TDD：先写失败测试，再补最小实现，再跑针对性测试与全量验证。
-
----
 
 ## 文件结构
 
