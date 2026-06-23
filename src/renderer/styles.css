@@ -502,7 +502,7 @@ body {
 .code-workflow {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -554,6 +554,120 @@ body {
 
 .code-repository-error {
   color: #b91c1c;
+}
+
+.code-qa-toolbar {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.code-qa-input,
+.code-qa-send-button {
+  height: 40px;
+  font: inherit;
+}
+
+.code-qa-input {
+  min-width: 0;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.code-qa-send-button {
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+}
+
+.code-qa-error {
+  min-height: 18px;
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.code-qa-history {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+}
+
+.code-qa-round {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.code-qa-round h3,
+.code-qa-round-meta,
+.code-qa-entry-body {
+  margin: 0;
+}
+
+.code-qa-round h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.code-qa-round-meta {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.code-qa-entry-list {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.code-qa-entry {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.code-qa-entry[data-status='error'] {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.code-qa-entry-header {
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #374151;
+  font-size: 12px;
+}
+
+.code-qa-entry-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .code-pane-grid {

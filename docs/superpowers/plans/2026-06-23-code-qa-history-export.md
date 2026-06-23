@@ -402,7 +402,7 @@ git commit -m "feat: add shared code qa rules"
   - `async function runCodeQaForPane(pane: CodePaneRuntime, roundId: string, question: string, isFollowUp: boolean): Promise<void>`
   - `function updateRoundEntry(roundId: string, siteId: CodeSiteId, patch: Partial<CodeRoundEntry>): void`
 
-- [ ] **Step 1: 先写渲染层失败测试，锁定无仓库报错、三站发送、追问不回主页、DeepWiki selector 切换和仓库切换新会话**
+- [x] **Step 1: 先写渲染层失败测试，锁定无仓库报错、三站发送、追问不回主页、DeepWiki selector 切换和仓库切换新会话**
 
 ```ts
 it('shows an error and skips all code webviews when no repository is active', async () => {
@@ -569,7 +569,7 @@ Expected: `FAIL`，至少出现以下失败之一：
 - DeepWiki 第二轮脚本仍未切换到 `followup` selector。
 - 切换仓库后旧问题仍残留在当前历史中。
 
-- [ ] **Step 2: 在 `app.ts` 和 `styles.css` 中实现最小状态模型、历史 UI 和发送编排**
+- [x] **Step 2: 在 `app.ts` 和 `styles.css` 中实现最小状态模型、历史 UI 和发送编排**
 
 ```ts
 import {
@@ -886,7 +886,7 @@ const submitCodeRepository = () => {
 }
 ```
 
-- [ ] **Step 3: 运行渲染层测试，确认当前仓库会话与追问编排成立**
+- [x] **Step 3: 运行渲染层测试，确认当前仓库会话与追问编排成立**
 
 Run: `npm test -- tests/renderer/app.test.ts`
 
@@ -896,7 +896,7 @@ Expected: `PASS`，至少覆盖以下行为：
 - 同仓库第二问不会触发三站 `loadURL()`，DeepWiki 改用 `textarea[data-deepwiki-input="followup"]`。
 - 切换仓库后当前历史只保留新仓库轮次，旧仓库问题不再出现在当前视图。
 
-- [ ] **Step 4: 提交当前仓库会话、历史 UI 与发送编排**
+- [x] **Step 4: 提交当前仓库会话、历史 UI 与发送编排**
 
 ```bash
 git add src/renderer/app.ts src/renderer/styles.css tests/renderer/app.test.ts
