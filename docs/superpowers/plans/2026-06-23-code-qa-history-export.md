@@ -80,7 +80,7 @@ base-ref: 5bfd297f88ce953f099e889c132a38d82994bdb5
   - `export function buildCodeQaExtractScript(options: { siteId: CodeSiteId; question: string }): string`
   - `export function formatCodeQaMarkdownExport(repository: NormalizedRepository, rounds: readonly CodeQaExportRound[], exportedAt: Date): string`
 
-- [ ] **Step 1: 先写共享测试，锁定 selector、Ask AI 激活和导出格式**
+- [x] **Step 1: 先写共享测试，锁定 selector、Ask AI 激活和导出格式**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -197,7 +197,7 @@ Run: `npm test -- tests/shared/codeQa.test.ts`
 
 Expected: `FAIL`，报错 `Cannot find module '../../src/shared/codeQa'` 或缺少 `buildCodeQaSendScript` / `formatCodeQaMarkdownExport` 导出。
 
-- [ ] **Step 2: 实现共享模块，集中三站点 DOM 规则和导出 formatter**
+- [x] **Step 2: 实现共享模块，集中三站点 DOM 规则和导出 formatter**
 
 ```ts
 import {
@@ -361,7 +361,7 @@ export function formatCodeQaMarkdownExport(
 }
 ```
 
-- [ ] **Step 3: 运行共享测试，确认共享模块已锁定需求行为**
+- [x] **Step 3: 运行共享测试，确认共享模块已锁定需求行为**
 
 Run: `npm test -- tests/shared/codeQa.test.ts`
 
@@ -371,7 +371,7 @@ Expected: `PASS`，覆盖以下结果：
 - CodeWiki 使用 `#message-textarea` 和 `button[data-test-id="send-message-button"]`。
 - Markdown formatter 输出仓库名、轮次顺序、生成中状态和单站错误。
 
-- [ ] **Step 4: 提交共享规则与 formatter**
+- [x] **Step 4: 提交共享规则与 formatter**
 
 ```bash
 git add src/shared/codeQa.ts tests/shared/codeQa.test.ts

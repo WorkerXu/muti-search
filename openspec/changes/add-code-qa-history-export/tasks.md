@@ -4,15 +4,15 @@
 - [ ] 1.2 增加测试，覆盖同仓库追问时不回主页导航。
 - [ ] 1.3 增加测试，覆盖 DeepWiki 首问和追问 selector 切换。
 - [ ] 1.4 增加测试，覆盖仓库变化后创建新的代码会话。
-- [ ] 1.5 增加测试，覆盖 Markdown 导出包含所有轮次和单站错误。
+- [x] 1.5 增加测试，覆盖 Markdown 导出包含所有轮次和单站错误。
 
 ## 2. 代码站点 DOM 自动化
 
-- [ ] 2.1 为 Zread、DeepWiki 和 CodeWiki 增加显式 DOM 配置。
-- [ ] 2.2 实现 Zread 发送前的 Ask AI 激活步骤。
-- [ ] 2.3 实现 DeepWiki 首问与追问的差异化发送行为。
-- [ ] 2.4 使用 `#message-textarea` 和 `data-test-id` 实现 CodeWiki 发送行为。
-- [ ] 2.5 为三个站点增加回答抽取和生成中状态判断。
+- [x] 2.1 为 Zread、DeepWiki 和 CodeWiki 增加显式 DOM 配置。
+- [x] 2.2 实现 Zread 发送前的 Ask AI 激活步骤。
+- [x] 2.3 实现 DeepWiki 首问与追问的差异化发送行为。
+- [x] 2.4 使用 `#message-textarea` 和 `data-test-id` 实现 CodeWiki 发送行为。
+- [x] 2.5 为三个站点增加回答抽取和生成中状态判断。
 
 ## 3. 本地历史模型
 
@@ -23,7 +23,7 @@
 
 ## 4. 导出
 
-- [ ] 4.1 增加代码问答 Markdown formatter。
+- [x] 4.1 增加代码问答 Markdown formatter。
 - [ ] 4.2 复用现有固定导出路径和剪贴板复制 IPC。
 - [ ] 4.3 导出仓库名、轮次顺序、站点回答、生成中说明和错误。
 
