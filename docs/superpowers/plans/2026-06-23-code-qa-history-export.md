@@ -920,7 +920,7 @@ git commit -m "feat: add code qa session history"
   - `function updateExportButtonVisibility(): void`
   - 搜索导出继续使用既有 `exportAnswers(...)`，代码导出只在 `productTab === 'code'` 时触发
 
-- [ ] **Step 1: 先写失败测试，锁定代码导出仅包含当前仓库轮次、单站错误和空历史提示**
+- [x] **Step 1: 先写失败测试，锁定代码导出仅包含当前仓库轮次、单站错误和空历史提示**
 
 ```ts
 it('exports all rounds for the current repository and includes per-site errors', async () => {
@@ -1009,7 +1009,7 @@ Run: `npm test -- tests/renderer/app.test.ts`
 
 Expected: `FAIL`，因为当前 `exportButton` 仍只导出搜索答案，或空历史情况下仍调用旧导出分支。
 
-- [ ] **Step 2: 在 `app.ts` 中把导出按钮分流到代码历史，并保持搜索导出不回归**
+- [x] **Step 2: 在 `app.ts` 中把导出按钮分流到代码历史，并保持搜索导出不回归**
 
 ```ts
 async function exportCodeQaHistory(options: {

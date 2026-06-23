@@ -23,7 +23,9 @@ import {
 import {
   buildCodeQaExtractScript,
   buildCodeQaSendScript,
+  formatCodeQaMarkdownExport,
   type CodeQaExtractResult,
+  type CodeQaExportRound,
   type CodeQaSendResult,
   type CodeQaStatus
 } from '../shared/codeQa.js';
@@ -558,6 +560,38 @@ export function createApp(root: HTMLDivElement): void {
     exportButton.hidden = false;
   };
 
+  const exportCodeQaHistory = async () => {
+    if (!activeRepository || codeRounds.length === 0) {
+      setTopError(topError, '没有可导出的代码问答记录');
+      return;
+    }
+
+    const exportApi = window.mutiSearch;
+    if (!exportApi) {
+      setTopError(topError, '导出通道未就绪');
+      return;
+    }
+
+    exportButton.disabled = true;
+    exportButton.textContent = '导出中';
+    setTopError(topError, null);
+
+    try {
+      const markdown = formatCodeQaMarkdownExport(
+        activeRepository,
+        codeRounds as readonly CodeQaExportRound[],
+        new Date()
+      );
+      const result = await exportApi.saveMarkdownExport({ markdown });
+      setTopError(topError, `已导出：${result.filePath}`);
+    } catch (error) {
+      setTopError(topError, toShortError(error));
+    } finally {
+      exportButton.disabled = false;
+      exportButton.textContent = '导出 MD';
+    }
+  };
+
   const submitCodeRepository = () => {
     const parsed = normalizeGitHubRepositoryInput(draftRepositoryInput);
     if (!parsed.ok) {
@@ -569,6 +603,7 @@ export function createApp(root: HTMLDivElement): void {
     if (activeRepository !== parsed.repository) {
       codeRounds = [];
       codeQuestionError = null;
+      exportButton.hidden = true;
       renderCodeQaHistory();
     }
 
@@ -925,6 +960,11 @@ export function createApp(root: HTMLDivElement): void {
   });
 
   exportButton.addEventListener('click', () => {
+    if (productTab === 'code') {
+      void exportCodeQaHistory();
+      return;
+    }
+
     void exportAnswers({
       prompt: lastPrompt,
       targetIds: lastTargetIds,

@@ -24,12 +24,12 @@
 ## 4. 导出
 
 - [x] 4.1 增加代码问答 Markdown formatter。
-- [ ] 4.2 复用现有固定导出路径和剪贴板复制 IPC。
-- [ ] 4.3 导出仓库名、轮次顺序、站点回答、生成中说明和错误。
+- [x] 4.2 复用现有固定导出路径和剪贴板复制 IPC。
+- [x] 4.3 导出仓库名、轮次顺序、站点回答、生成中说明和错误。
 
 ## 5. 验证
 
-- [ ] 5.1 Run `npm run typecheck`.
-- [ ] 5.2 Run `npm test`.
-- [ ] 5.3 Run `npm run build`.
+- [x] 5.1 Run `npm run typecheck`.
+- [x] 5.2 Run `npm test`.
+- [x] 5.3 Run `npm run build`.
 - [ ] 5.4 在 packaged 或 dev app 中手动验证 Chrome 已观察到的 `obra/superpowers` 流程。
