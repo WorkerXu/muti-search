@@ -1,0 +1,14 @@
+{
+  "change": "replace-view-modes-with-product-tabs",
+  "phase": "design",
+  "mode": "compact",
+  "canonical_spec": "openspec",
+  "generated_by": "comet-handoff.sh",
+  "context_hash": "b2af27a522b1dc88d9f799332208fe2787bde20270e2f072a02d611f3bf20862",
+  "files": [
+    { "path": "openspec/changes/replace-view-modes-with-product-tabs/proposal.md", "sha256": "3c0ba5bebb33ef6b50bed4cbe400456b8053bae88bb74d3099476ec4f047379e" },
+    { "path": "openspec/changes/replace-view-modes-with-product-tabs/design.md", "sha256": "9b41af5971f233efb59e976e035fdd70192cc41c869615bce01556607bb4a095" },
+    { "path": "openspec/changes/replace-view-modes-with-product-tabs/tasks.md", "sha256": "2619f06bd8dffb7eb75ed0f5a5e249600bf5031d74f43ca1afac63c10ebe4e64" },
+    { "path": "openspec/changes/replace-view-modes-with-product-tabs/specs/product-tabs-navigation/spec.md", "sha256": "7881caa1282d2d441dedc8f846fbf4998a8aeb1ad35b7e5c01b91cc3b7b038de" }
+  ]
+}
