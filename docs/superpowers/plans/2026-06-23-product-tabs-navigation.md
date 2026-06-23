@@ -537,7 +537,7 @@ Expected: 样式与文档变更独立成一笔提交，方便回滚和 review。
 - Consumes: 前三项任务产出的 renderer DOM contract、CSS selector、README 验收步骤
 - Produces: 可交付的验证证据：类型检查、单测、构建、人工验证 checklist
 
-- [ ] **Step 1: 跑类型检查**
+- [x] **Step 1: 跑类型检查**
 
 ```bash
 npm run typecheck
@@ -545,7 +545,7 @@ npm run typecheck
 
 Expected: 命令退出码为 `0`，`src/renderer/app.ts` 中不再出现 `ViewMode` 相关类型错误或回调签名不匹配。
 
-- [ ] **Step 2: 跑完整测试套件**
+- [x] **Step 2: 跑完整测试套件**
 
 ```bash
 npm test
@@ -553,7 +553,7 @@ npm test
 
 Expected: `vitest run` 全绿，新增产品 Tab 测试通过，现有发送/导出/错误/物理输入回退测试无回归。
 
-- [ ] **Step 3: 跑生产构建**
+- [x] **Step 3: 跑生产构建**
 
 ```bash
 npm run build
@@ -561,7 +561,7 @@ npm run build
 
 Expected: `build:main` 与 `vite build` 都成功，renderer DOM 与样式改动可以进入打包产物。
 
-- [ ] **Step 4: 依据 README 做一次人工冒烟**
+- [x] **Step 4: 依据 README 做一次人工冒烟**
 
 ```bash
 npm run dev
@@ -569,7 +569,7 @@ npm run dev
 
 Expected: Vite 启动在 `http://127.0.0.1:5173`，Electron 窗口打开后默认显示“搜索”Tab；切到“代码”Tab 仅出现本地占位区；返回“搜索”Tab 后侧边栏、单 WebView、发送、导出、设置全部可见。
 
-- [ ] **Step 5: 提交验证结论**
+- [x] **Step 5: 提交验证结论**
 
 ```bash
 git status --short

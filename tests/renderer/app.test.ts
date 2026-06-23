@@ -218,23 +218,33 @@ describe('createApp', () => {
     createApp(root);
 
     const originalWebviews = Array.from(root.querySelectorAll('webview'));
+    const shell = root.querySelector('.app-shell') as HTMLElement;
     const appBody = root.querySelector('[data-testid="app-body"]') as HTMLElement;
     const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
     const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    const searchWorkflow = root.querySelector('[data-testid="search-workflow"]') as HTMLElement;
     const codeWorkflow = root.querySelector('[data-testid="code-workflow"]') as HTMLElement;
+    const activePane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLElement;
 
     codeTab.click();
 
+    expect(shell.getAttribute('data-product-tab')).toBe('code');
     expect(appBody.getAttribute('data-product-tab')).toBe('code');
     expect(searchTab.getAttribute('aria-pressed')).toBe('false');
     expect(codeTab.getAttribute('aria-pressed')).toBe('true');
+    expect(searchWorkflow.hidden).toBe(true);
+    expect(codeWorkflow.hidden).toBe(false);
+    expect(activePane.closest('[hidden]')).toBe(searchWorkflow);
     expect(codeWorkflow.textContent).toContain('代码工作流');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
 
     searchTab.click();
 
+    expect(shell.getAttribute('data-product-tab')).toBe('search');
     expect(appBody.getAttribute('data-product-tab')).toBe('search');
     expect(searchTab.getAttribute('aria-pressed')).toBe('true');
+    expect(searchWorkflow.hidden).toBe(false);
+    expect(codeWorkflow.hidden).toBe(true);
   });
 
   it('keeps the search workflow in single-pane mode and reuses existing webviews', () => {
