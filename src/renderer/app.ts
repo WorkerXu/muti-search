@@ -128,6 +128,8 @@ type CodePaneRuntime = {
   statusText: HTMLSpanElement;
   errorText: HTMLParagraphElement;
   webview: RendererWebviewElement;
+  sidebarButton: HTMLButtonElement;
+  sidebarStatusDot: HTMLSpanElement;
   status: WebViewLifecycleStatus;
   inFlightCount: number;
 };
@@ -153,6 +155,7 @@ export function createApp(root: HTMLDivElement): void {
 
   let productTab: ProductTab = 'search';
   let activePaneId: ServiceId = services[0].id;
+  let activeCodeSiteId: CodeSiteId = codeSites[0].id;
   let expandedPaneId: ServiceId | null = null;
   let lastPrompt: string | null = null;
   let lastTargetIds = new Set<ServiceId>();
@@ -332,9 +335,27 @@ export function createApp(root: HTMLDivElement): void {
   codeQaHistory.dataset.testid = 'code-qa-history';
   codeWorkflow.append(codeQaHistory);
 
+  const codeSiteArea = document.createElement('section');
+  codeSiteArea.className = 'code-site-area';
+  codeSiteArea.dataset.testid = 'code-site-area';
+  codeWorkflow.append(codeSiteArea);
+
+  const codeSiteSidebar = document.createElement('aside');
+  codeSiteSidebar.className = 'service-sidebar code-site-sidebar';
+  codeSiteSidebar.dataset.testid = 'code-site-sidebar';
+  codeSiteArea.append(codeSiteSidebar);
+
+  const codeSiteSidebarTitle = document.createElement('h2');
+  codeSiteSidebarTitle.textContent = '代码网站';
+  codeSiteSidebar.append(codeSiteSidebarTitle);
+
+  const codeSiteSidebarList = document.createElement('div');
+  codeSiteSidebarList.className = 'service-sidebar-list';
+  codeSiteSidebar.append(codeSiteSidebarList);
+
   const codePaneGrid = document.createElement('section');
   codePaneGrid.className = 'code-pane-grid';
-  codeWorkflow.append(codePaneGrid);
+  codeSiteArea.append(codePaneGrid);
 
   const setCodePaneStatus = (
     pane: CodePaneRuntime,
@@ -348,8 +369,19 @@ export function createApp(root: HTMLDivElement): void {
     pane.statusDot.dataset.status = status;
     pane.statusDot.title = statusLabel;
     pane.statusDot.setAttribute('aria-label', statusLabel);
+    pane.sidebarStatusDot.dataset.status = status;
+    pane.sidebarStatusDot.title = statusLabel;
+    pane.sidebarStatusDot.setAttribute('aria-label', statusLabel);
     pane.statusText.textContent = statusLabel;
     pane.errorText.textContent = errorMessage ?? '';
+  };
+
+  const renderCodePanes = (): void => {
+    for (const pane of codePanes.values()) {
+      const layout = activeCodeSiteId === pane.site.id ? 'single-active' : 'single-hidden';
+      pane.article.dataset.layout = layout;
+      pane.sidebarButton.setAttribute('aria-current', String(activeCodeSiteId === pane.site.id));
+    }
   };
 
   const loadCodePaneForRepository = (
@@ -397,6 +429,12 @@ export function createApp(root: HTMLDivElement): void {
       pane.hasDomReady = false;
       pane.state.status = 'released';
       pane.state.errorMessage = null;
+    }
+  };
+
+  const loadSearchPanes = (): void => {
+    for (const pane of panes.values()) {
+      startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
     }
   };
 
@@ -696,6 +734,23 @@ export function createApp(root: HTMLDivElement): void {
   };
 
   for (const site of codeSites) {
+    const sidebarRow = document.createElement('div');
+    sidebarRow.className = 'service-sidebar-row';
+    codeSiteSidebarList.append(sidebarRow);
+
+    const sidebarButton = document.createElement('button');
+    sidebarButton.className = 'service-sidebar-button';
+    sidebarButton.dataset.codeSidebarSite = site.id;
+    sidebarRow.append(sidebarButton);
+
+    const sidebarStatusDot = document.createElement('span');
+    sidebarStatusDot.className = 'pane-status-dot';
+    sidebarButton.append(sidebarStatusDot);
+
+    const sidebarName = document.createElement('span');
+    sidebarName.textContent = site.name;
+    sidebarButton.append(sidebarName);
+
     const article = document.createElement('article');
     article.className = 'code-site-pane';
     article.dataset.testid = `code-site-pane-${site.id}`;
@@ -737,6 +792,8 @@ export function createApp(root: HTMLDivElement): void {
       statusText,
       errorText,
       webview,
+      sidebarButton,
+      sidebarStatusDot,
       status: 'unloaded',
       inFlightCount: 0
     };
@@ -765,9 +822,15 @@ export function createApp(root: HTMLDivElement): void {
     codePanes.set(site.id, pane);
     codePaneGrid.append(article);
     setCodePaneStatus(pane, 'unloaded');
+
+    sidebarButton.addEventListener('click', () => {
+      activeCodeSiteId = site.id;
+      renderCodePanes();
+    });
   }
 
   renderCodeRepositoryMeta();
+  renderCodePanes();
 
   const renderApp = () => {
     shell.dataset.productTab = productTab;
@@ -779,6 +842,7 @@ export function createApp(root: HTMLDivElement): void {
     for (const pane of panes.values()) {
       renderPane(pane, expandedPaneId, activePaneId);
     }
+    renderCodePanes();
   };
 
   for (const service of services) {
@@ -930,7 +994,6 @@ export function createApp(root: HTMLDivElement): void {
     sidebarButton.addEventListener('click', () => {
       activePaneId = service.id;
       expandedPaneId = null;
-      startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
       renderApp();
     });
 
@@ -944,9 +1007,6 @@ export function createApp(root: HTMLDivElement): void {
 
     const toggleExpanded = () => {
       expandedPaneId = expandedPaneId === service.id ? null : service.id;
-      if (expandedPaneId === service.id || activePaneId === service.id) {
-        startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
-      }
       renderApp();
     };
 
@@ -1085,10 +1145,7 @@ export function createApp(root: HTMLDivElement): void {
   searchTabButton.addEventListener('click', () => {
     productTab = 'search';
     releaseCodePanes();
-    const activePane = panes.get(activePaneId);
-    if (activePane) {
-      startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
-    }
+    loadSearchPanes();
     renderApp();
   });
 
@@ -1102,10 +1159,7 @@ export function createApp(root: HTMLDivElement): void {
 
   settingsButton.addEventListener('click', settingsOverlay.open);
 
-  const activePane = panes.get(activePaneId);
-  if (activePane) {
-    startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
-  }
+  loadSearchPanes();
   renderApp();
   root.append(shell);
 }

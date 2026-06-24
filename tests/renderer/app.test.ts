@@ -180,7 +180,7 @@ describe('createApp', () => {
     expect(pathList.textContent).not.toContain('清理');
   });
 
-  it('sets persistent partition but only navigates the visible search webview at startup', () => {
+  it('sets persistent partition and navigates all search webviews when search is active', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -194,16 +194,16 @@ describe('createApp', () => {
         src: webview.getAttribute('src')
       }))
     ).toEqual(
-      services.map((service, index) => ({
+      services.map((service) => ({
         partition: service.partition,
-        src: index === 0 ? service.url : null
+        src: service.url
       }))
     );
     expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-status')).toBe(
       'loading'
     );
     expect(root.querySelector('[data-pane-id="deepseek"]')?.getAttribute('data-status')).toBe(
-      'unloaded'
+      'loading'
     );
   });
 
@@ -262,7 +262,7 @@ describe('createApp', () => {
     expect(root.querySelector('[data-testid="code-workflow"]')).not.toBeNull();
   });
 
-  it('switches between search and code tabs while releasing the inactive workflow', () => {
+  it('switches product tabs by releasing the inactive workflow and loading the active workflow', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -274,7 +274,9 @@ describe('createApp', () => {
     const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
     const searchWorkflow = root.querySelector('[data-testid="search-workflow"]') as HTMLElement;
     const codeWorkflow = root.querySelector('[data-testid="code-workflow"]') as HTMLElement;
-    const activePane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLElement;
+    const searchWebviews = Array.from(
+      root.querySelectorAll('[data-pane-id] webview')
+    ) as MockWebview[];
 
     codeTab.click();
 
@@ -284,11 +286,14 @@ describe('createApp', () => {
     expect(codeTab.getAttribute('aria-pressed')).toBe('true');
     expect(searchWorkflow.hidden).toBe(true);
     expect(codeWorkflow.hidden).toBe(false);
-    expect(activePane.closest('[hidden]')).toBe(searchWorkflow);
     expect(codeWorkflow.textContent).toContain('Zread');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
-    expect((activePane.querySelector('webview') as MockWebview).getAttribute('src')).toBeNull();
-    expect(activePane.getAttribute('data-status')).toBe('released');
+    expect(searchWebviews.map((webview) => webview.getAttribute('src'))).toEqual(
+      services.map(() => null)
+    );
+    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-status')).toBe(
+      'released'
+    );
 
     searchTab.click();
 
@@ -297,8 +302,8 @@ describe('createApp', () => {
     expect(searchTab.getAttribute('aria-pressed')).toBe('true');
     expect(searchWorkflow.hidden).toBe(false);
     expect(codeWorkflow.hidden).toBe(true);
-    expect((activePane.querySelector('webview') as MockWebview).getAttribute('src')).toBe(
-      getService('chatgpt').url
+    expect(searchWebviews.map((webview) => webview.getAttribute('src'))).toEqual(
+      services.map((service) => service.url)
     );
   });
 
@@ -317,6 +322,35 @@ describe('createApp', () => {
     expect(root.querySelector('[data-testid="view-mode-grid"]')).toBeNull();
     expect(root.querySelector('[data-testid="view-mode-single"]')).toBeNull();
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
+  });
+
+  it('renders code sites with a left menu and single active code pane', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const codeSidebar = root.querySelector('[data-testid="code-site-sidebar"]') as HTMLElement;
+    const deepwikiButton = root.querySelector(
+      '[data-code-sidebar-site="deepwiki"]'
+    ) as HTMLButtonElement;
+
+    expect(codeSidebar).not.toBeNull();
+    expect(root.querySelector('[data-testid="code-site-pane-zread"]')?.getAttribute('data-layout'))
+      .toBe('single-active');
+    expect(
+      root.querySelector('[data-testid="code-site-pane-deepwiki"]')?.getAttribute('data-layout')
+    ).toBe('single-hidden');
+
+    deepwikiButton.click();
+
+    expect(deepwikiButton.getAttribute('aria-current')).toBe('true');
+    expect(root.querySelector('[data-testid="code-site-pane-zread"]')?.getAttribute('data-layout'))
+      .toBe('single-hidden');
+    expect(
+      root.querySelector('[data-testid="code-site-pane-deepwiki"]')?.getAttribute('data-layout')
+    ).toBe('single-active');
   });
 
   it('does not navigate remote code sites before a valid repository is submitted', () => {
@@ -357,6 +391,40 @@ describe('createApp', () => {
     expect(root.querySelector('[data-testid="code-repository-current"]')?.textContent).toContain(
       'obra/superpowers'
     );
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
+  });
+
+  it('releases all code site pages when leaving code and reloads them when returning', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+
+    codeTab.click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeWebviews = codeWebviewsFrom(root);
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
+
+    searchTab.click();
+
+    expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([null, null, null]);
+
+    codeTab.click();
+
     expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
       'https://zread.ai/obra/superpowers',
       'https://deepwiki.com/obra/superpowers',

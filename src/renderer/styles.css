@@ -705,7 +705,13 @@ body {
 .code-pane-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.code-site-area {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -717,6 +723,14 @@ body {
   border-radius: 8px;
   background: #fff;
   overflow: hidden;
+}
+
+.code-site-pane[data-layout='single-active'] {
+  min-height: calc(100vh - 280px);
+}
+
+.code-site-pane[data-layout='single-hidden'] {
+  display: none;
 }
 
 .code-site-header {
@@ -778,8 +792,16 @@ body {
     order: 1;
   }
 
-  .code-pane-grid {
+  .code-site-area {
     grid-template-columns: 1fr;
+  }
+
+  .code-site-sidebar {
+    order: 2;
+  }
+
+  .code-pane-grid {
+    order: 1;
   }
 }
 
