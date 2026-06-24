@@ -2,7 +2,8 @@
 comet_change: optimize-webview-lifecycle
 role: technical-design
 canonical_spec: openspec
-status: draft
+archived-with: 2026-06-24-optimize-webview-lifecycle
+status: final
 ---
 
 # WebView 生命周期优化设计

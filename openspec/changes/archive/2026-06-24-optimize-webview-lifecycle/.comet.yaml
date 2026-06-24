@@ -17,5 +17,5 @@ verification_report: docs/superpowers/reports/2026-06-24-optimize-webview-lifecy
 branch_status: handled
 created_at: 2026-06-23
 verified_at: 2026-06-24
-archived: false
+archived: true
 direct_override: true
