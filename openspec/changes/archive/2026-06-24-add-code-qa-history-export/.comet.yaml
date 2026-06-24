@@ -17,6 +17,6 @@ verification_report: docs/superpowers/reports/2026-06-23-add-code-qa-history-exp
 branch_status: handled
 created_at: 2026-06-23
 verified_at: 2026-06-23
-archived: false
+archived: true
 handoff_context: openspec/changes/add-code-qa-history-export/.comet/handoff/design-context.json
 handoff_hash: d2d65a001f66ede93f8040c599a71387432aa45faa8729cde3170ad1b3a18242

@@ -2,6 +2,7 @@
 change: add-code-qa-history-export
 design-doc: docs/superpowers/specs/2026-06-23-code-qa-history-export-design.md
 base-ref: 5bfd297f88ce953f099e889c132a38d82994bdb5
+archived-with: 2026-06-24-add-code-qa-history-export
 ---
 
 # 代码问答历史与导出实施计划

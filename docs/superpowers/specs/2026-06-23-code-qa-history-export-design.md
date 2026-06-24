@@ -2,6 +2,8 @@
 comet_change: add-code-qa-history-export
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-06-24-add-code-qa-history-export
+status: final
 ---
 
 # 代码问答历史与导出设计
