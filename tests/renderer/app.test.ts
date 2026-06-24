@@ -222,6 +222,28 @@ describe('createApp', () => {
     expect(chatgptPane.getAttribute('data-status')).toBe('ready');
   });
 
+  it('keeps an existing answer page when selecting a loaded search service tab', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const deepseekPane = root.querySelector('[data-pane-id="deepseek"]') as HTMLElement;
+    const deepseekWebview = deepseekPane.querySelector('webview') as MockWebview;
+    const deepseekTab = root.querySelector(
+      '[data-sidebar-service="deepseek"]'
+    ) as HTMLButtonElement;
+
+    deepseekWebview.setAttribute('src', 'https://chat.deepseek.com/a/chat/s/answer-123');
+    deepseekWebview.dispatchEvent(new Event('dom-ready'));
+
+    deepseekTab.click();
+
+    expect(deepseekPane.getAttribute('data-layout')).toBe('single-active');
+    expect(deepseekWebview.getAttribute('src')).toBe(
+      'https://chat.deepseek.com/a/chat/s/answer-123'
+    );
+  });
+
   it('defaults to the search product tab and hides the legacy view mode switch', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 

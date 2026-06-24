@@ -1360,15 +1360,11 @@ function startSearchPaneNavigation(pane: PaneRuntime, render: () => void): void 
   }
 
   const currentSrc = pane.webview.getAttribute('src');
-  if (currentSrc === pane.service.url && pane.hasDomReady) {
-    if (pane.state.status === 'unloaded' || pane.state.status === 'released') {
-      pane.state.status = 'ready';
-      render();
-    }
+  if (currentSrc && pane.hasDomReady) {
     return;
   }
 
-  if (currentSrc === pane.service.url) {
+  if (currentSrc) {
     if (pane.state.status === 'unloaded' || pane.state.status === 'released') {
       pane.state.status = 'loading';
       render();
