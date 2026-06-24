@@ -118,9 +118,10 @@ describe('service registry', () => {
     expect(createInitialPaneState()).toEqual({
       enabled: true,
       selected: true,
-      status: 'loading',
+      status: 'unloaded',
       errorMessage: null
     });
+    expect(statusLabels.unloaded).toBe('未加载');
     expect(statusLabels.manual_required).toBe('需人工处理');
   });
 });

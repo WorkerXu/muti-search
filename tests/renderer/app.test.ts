@@ -55,6 +55,12 @@ function attachWebviewMocks(root: HTMLDivElement) {
   };
 }
 
+function codeWebviewsFrom(root: HTMLDivElement): MockWebview[] {
+  return Array.from(
+    root.querySelectorAll('[data-testid^="code-site-pane-"] webview')
+  ) as MockWebview[];
+}
+
 function createDeferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -174,7 +180,7 @@ describe('createApp', () => {
     expect(pathList.textContent).not.toContain('清理');
   });
 
-  it('sets persistent partition and src on every search webview', () => {
+  it('sets persistent partition but only navigates the visible search webview at startup', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -188,10 +194,16 @@ describe('createApp', () => {
         src: webview.getAttribute('src')
       }))
     ).toEqual(
-      services.map((service) => ({
+      services.map((service, index) => ({
         partition: service.partition,
-        src: service.url
+        src: index === 0 ? service.url : null
       }))
+    );
+    expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-status')).toBe(
+      'loading'
+    );
+    expect(root.querySelector('[data-pane-id="deepseek"]')?.getAttribute('data-status')).toBe(
+      'unloaded'
     );
   });
 
@@ -213,7 +225,7 @@ describe('createApp', () => {
     expect(root.querySelector('[data-testid="code-workflow"]')).not.toBeNull();
   });
 
-  it('switches between search and code tabs without creating extra webviews', () => {
+  it('switches between search and code tabs while releasing the inactive workflow', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
@@ -238,6 +250,8 @@ describe('createApp', () => {
     expect(activePane.closest('[hidden]')).toBe(searchWorkflow);
     expect(codeWorkflow.textContent).toContain('Zread');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
+    expect((activePane.querySelector('webview') as MockWebview).getAttribute('src')).toBeNull();
+    expect(activePane.getAttribute('data-status')).toBe('released');
 
     searchTab.click();
 
@@ -246,6 +260,9 @@ describe('createApp', () => {
     expect(searchTab.getAttribute('aria-pressed')).toBe('true');
     expect(searchWorkflow.hidden).toBe(false);
     expect(codeWorkflow.hidden).toBe(true);
+    expect((activePane.querySelector('webview') as MockWebview).getAttribute('src')).toBe(
+      getService('chatgpt').url
+    );
   });
 
   it('keeps the search workflow in single-pane mode and reuses existing webviews', () => {
@@ -879,6 +896,20 @@ describe('createApp', () => {
     (root.querySelector('[data-testid="code-question-send-button"]') as HTMLButtonElement).click();
     await flushAsyncWork();
 
+    (root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement).click();
+    expect(codeWebviewsFrom(root).map((webview) => webview.getAttribute('src'))).toEqual([
+      null,
+      null,
+      null
+    ]);
+
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+    expect(codeWebviewsFrom(root).map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
+
     const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
     expect(exportButton.hidden).toBe(false);
     exportButton.click();
@@ -909,6 +940,9 @@ describe('createApp', () => {
     expect(root.querySelector('[data-pane-id="gemini"]')?.getAttribute('data-layout')).toBe(
       'single-active'
     );
+    expect(
+      (root.querySelector('[data-pane-id="gemini"] webview') as MockWebview).getAttribute('src')
+    ).toBe(getService('gemini').url);
     expect(root.querySelector('[data-pane-id="chatgpt"]')?.getAttribute('data-layout')).toBe(
       'single-hidden'
     );

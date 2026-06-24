@@ -41,6 +41,7 @@ import { services, type ServiceDefinition, type ServiceId } from '../shared/serv
 import {
   createInitialPaneState,
   statusLabels,
+  type PaneStatus,
   type PaneState
 } from '../shared/status';
 import type { RendererWebviewElement } from './webviewTypes';
@@ -52,7 +53,10 @@ type RuntimeDataPath = Readonly<{
 }>;
 
 type ProductTab = 'search' | 'code';
-type CodePaneStatus = 'idle' | 'loading' | 'ready' | 'error';
+type WebViewLifecycleStatus = Extract<
+  PaneStatus,
+  'unloaded' | 'loading' | 'ready' | 'warm' | 'released' | 'error'
+>;
 type CodeRoundEntry = {
   siteId: CodeSiteId;
   siteName: string;
@@ -101,6 +105,7 @@ type PaneRuntime = {
   state: PaneState;
   hasDomReady: boolean;
   sendGeneration: number;
+  isSendPending: boolean;
   article: HTMLElement;
   header: HTMLElement;
   selectedToggle: HTMLInputElement;
@@ -123,7 +128,8 @@ type CodePaneRuntime = {
   statusText: HTMLSpanElement;
   errorText: HTMLParagraphElement;
   webview: RendererWebviewElement;
-  status: CodePaneStatus;
+  status: WebViewLifecycleStatus;
+  inFlightCount: number;
 };
 
 const runtimeDataRoot = '/Users/coderxu/Library/Application Support/muti-search';
@@ -332,17 +338,10 @@ export function createApp(root: HTMLDivElement): void {
 
   const setCodePaneStatus = (
     pane: CodePaneRuntime,
-    status: CodePaneStatus,
+    status: WebViewLifecycleStatus,
     errorMessage?: string
   ) => {
-    const statusLabel =
-      status === 'idle'
-        ? '等待仓库'
-        : status === 'loading'
-          ? '加载中'
-          : status === 'ready'
-            ? '已就绪'
-            : '加载失败';
+    const statusLabel = status === 'error' ? '加载失败' : statusLabels[status];
 
     pane.status = status;
     pane.article.dataset.status = status;
@@ -351,6 +350,54 @@ export function createApp(root: HTMLDivElement): void {
     pane.statusDot.setAttribute('aria-label', statusLabel);
     pane.statusText.textContent = statusLabel;
     pane.errorText.textContent = errorMessage ?? '';
+  };
+
+  const loadCodePaneForRepository = (
+    pane: CodePaneRuntime,
+    repository: NormalizedRepository
+  ): void => {
+    const url = buildCodeSiteUrl(pane.site.id, repository);
+    pane.webview.setAttribute('partition', pane.site.partition);
+    pane.webview.setAttribute('src', url);
+    setCodePaneStatus(pane, 'loading');
+  };
+
+  const ensureCodePanesLoaded = (): void => {
+    if (!activeRepository) {
+      return;
+    }
+
+    for (const pane of codePanes.values()) {
+      if (pane.webview.getAttribute('src') !== buildCodeSiteUrl(pane.site.id, activeRepository)) {
+        loadCodePaneForRepository(pane, activeRepository);
+      } else if (pane.status === 'released' || pane.status === 'unloaded') {
+        setCodePaneStatus(pane, 'warm');
+      }
+    }
+  };
+
+  const releaseCodePanes = (): void => {
+    for (const pane of codePanes.values()) {
+      if (pane.inFlightCount > 0 || pane.status === 'unloaded' || pane.status === 'released') {
+        continue;
+      }
+
+      releaseWebview(pane.webview);
+      setCodePaneStatus(pane, 'released');
+    }
+  };
+
+  const releaseSearchPanes = (): void => {
+    for (const pane of panes.values()) {
+      if (pane.isSendPending || pane.state.status === 'unloaded' || pane.state.status === 'released') {
+        continue;
+      }
+
+      releaseWebview(pane.webview);
+      pane.hasDomReady = false;
+      pane.state.status = 'released';
+      pane.state.errorMessage = null;
+    }
   };
 
   const renderCodeRepositoryMeta = () => {
@@ -466,6 +513,7 @@ export function createApp(root: HTMLDivElement): void {
     question: string,
     isFollowUp: boolean
   ) => {
+    pane.inFlightCount += 1;
     updateRoundEntry(roundId, pane.site.id, {
       status: 'sending',
       errorMessage: null
@@ -476,6 +524,7 @@ export function createApp(root: HTMLDivElement): void {
         status: 'manual_required',
         errorMessage: '服务视图未就绪'
       });
+      pane.inFlightCount = Math.max(0, pane.inFlightCount - 1);
       return;
     }
 
@@ -556,6 +605,8 @@ export function createApp(root: HTMLDivElement): void {
         status: 'error',
         errorMessage: toShortError(error)
       });
+    } finally {
+      pane.inFlightCount = Math.max(0, pane.inFlightCount - 1);
     }
   };
 
@@ -579,6 +630,7 @@ export function createApp(root: HTMLDivElement): void {
     codeQuestionError = null;
     exportButton.hidden = false;
     renderCodeQaHistory();
+    ensureCodePanesLoaded();
 
     await Promise.all(
       Array.from(codePanes.values()).map((pane) =>
@@ -638,10 +690,8 @@ export function createApp(root: HTMLDivElement): void {
     codeInputError = null;
     renderCodeRepositoryMeta();
 
-    for (const pane of codePanes.values()) {
-      pane.webview.setAttribute('partition', pane.site.partition);
-      pane.webview.setAttribute('src', buildCodeSiteUrl(pane.site.id, parsed.repository));
-      setCodePaneStatus(pane, 'loading');
+    if (productTab === 'code') {
+      ensureCodePanesLoaded();
     }
   };
 
@@ -687,12 +737,24 @@ export function createApp(root: HTMLDivElement): void {
       statusText,
       errorText,
       webview,
-      status: 'idle'
+      status: 'unloaded',
+      inFlightCount: 0
     };
 
-    webview.addEventListener('did-start-loading', () => setCodePaneStatus(pane, 'loading'));
-    webview.addEventListener('did-finish-load', () => setCodePaneStatus(pane, 'ready'));
+    webview.addEventListener('did-start-loading', () => {
+      if (webview.getAttribute('src')) {
+        setCodePaneStatus(pane, 'loading');
+      }
+    });
+    webview.addEventListener('did-finish-load', () => {
+      if (webview.getAttribute('src')) {
+        setCodePaneStatus(pane, 'ready');
+      }
+    });
     webview.addEventListener('did-fail-load', (event: Event) => {
+      if (!webview.getAttribute('src')) {
+        return;
+      }
       const message =
         event instanceof CustomEvent && typeof event.detail?.errorDescription === 'string'
           ? event.detail.errorDescription
@@ -702,7 +764,7 @@ export function createApp(root: HTMLDivElement): void {
 
     codePanes.set(site.id, pane);
     codePaneGrid.append(article);
-    setCodePaneStatus(pane, 'idle');
+    setCodePaneStatus(pane, 'unloaded');
   }
 
   renderCodeRepositoryMeta();
@@ -714,6 +776,12 @@ export function createApp(root: HTMLDivElement): void {
     codeWorkflow.hidden = productTab !== 'code';
     searchTabButton.setAttribute('aria-pressed', String(productTab === 'search'));
     codeTabButton.setAttribute('aria-pressed', String(productTab === 'code'));
+    if (productTab === 'search') {
+      const activePane = panes.get(activePaneId);
+      if (activePane) {
+        startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
+      }
+    }
     for (const pane of panes.values()) {
       renderPane(pane, expandedPaneId, activePaneId);
     }
@@ -815,7 +883,6 @@ export function createApp(root: HTMLDivElement): void {
 
     const webview = document.createElement('webview');
     webview.className = 'pane-webview';
-    webview.setAttribute('src', service.url);
     webview.setAttribute('partition', service.partition);
     body.append(webview);
 
@@ -824,6 +891,7 @@ export function createApp(root: HTMLDivElement): void {
       state: paneState,
       hasDomReady: false,
       sendGeneration: 0,
+      isSendPending: false,
       article,
       header,
       selectedToggle,
@@ -845,7 +913,13 @@ export function createApp(root: HTMLDivElement): void {
     const setPaneEnabled = (enabled: boolean) => {
       pane.state.enabled = enabled;
       pane.sendGeneration += 1;
-      pane.state.status = enabled ? (pane.hasDomReady ? 'ready' : 'loading') : 'disabled';
+      pane.state.status = enabled
+        ? pane.hasDomReady
+          ? 'ready'
+          : pane.webview.getAttribute('src')
+            ? 'loading'
+            : 'unloaded'
+        : 'disabled';
       pane.state.errorMessage = null;
       renderApp();
     };
@@ -862,6 +936,7 @@ export function createApp(root: HTMLDivElement): void {
     sidebarButton.addEventListener('click', () => {
       activePaneId = service.id;
       expandedPaneId = null;
+      startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
       renderApp();
     });
 
@@ -875,6 +950,9 @@ export function createApp(root: HTMLDivElement): void {
 
     const toggleExpanded = () => {
       expandedPaneId = expandedPaneId === service.id ? null : service.id;
+      if (expandedPaneId === service.id || activePaneId === service.id) {
+        startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
+      }
       renderApp();
     };
 
@@ -898,13 +976,22 @@ export function createApp(root: HTMLDivElement): void {
     webview.addEventListener('dblclick', handlePaneDoubleClick);
 
     webview.addEventListener('dom-ready', () => {
+      if (!pane.webview.getAttribute('src')) {
+        return;
+      }
+
       pane.hasDomReady = true;
 
       if (!pane.state.enabled) {
         return;
       }
 
-      if (pane.state.status === 'loading' || pane.state.status === 'error') {
+      if (
+        pane.state.status === 'unloaded' ||
+        pane.state.status === 'loading' ||
+        pane.state.status === 'released' ||
+        pane.state.status === 'error'
+      ) {
         pane.state.status = 'ready';
         pane.state.errorMessage = null;
         renderApp();
@@ -912,7 +999,7 @@ export function createApp(root: HTMLDivElement): void {
     });
 
     webview.addEventListener('did-fail-load', (event: Event) => {
-      if (!pane.state.enabled) {
+      if (!pane.state.enabled || !pane.webview.getAttribute('src')) {
         return;
       }
 
@@ -1003,12 +1090,15 @@ export function createApp(root: HTMLDivElement): void {
 
   searchTabButton.addEventListener('click', () => {
     productTab = 'search';
+    releaseCodePanes();
     renderApp();
   });
 
   codeTabButton.addEventListener('click', () => {
     productTab = 'code';
     expandedPaneId = null;
+    releaseSearchPanes();
+    ensureCodePanesLoaded();
     renderApp();
   });
 
@@ -1156,39 +1246,40 @@ async function sendPrompt(options: {
     targets.map(async (pane) => {
       const sendGeneration = pane.sendGeneration + 1;
       pane.sendGeneration = sendGeneration;
+      pane.isSendPending = true;
       pane.hasDomReady = false;
       pane.state.status = 'loading';
       pane.state.errorMessage = null;
       options.renderPane(pane);
 
-      const navigation = await navigatePaneHomeForSend(pane, sendGeneration);
-      if (sendGeneration !== pane.sendGeneration) {
-        return;
-      }
-
-      if (!navigation.ok) {
-        pane.state.status = 'error';
-        pane.state.errorMessage = navigation.errorMessage;
-        options.renderPane(pane);
-        return;
-      }
-
-      pane.state.status = 'sending';
-      pane.state.errorMessage = null;
-      options.renderPane(pane);
-
-      if (typeof pane.webview.executeJavaScript !== 'function') {
+      try {
+        const navigation = await navigatePaneHomeForSend(pane, sendGeneration);
         if (sendGeneration !== pane.sendGeneration) {
           return;
         }
 
-        pane.state.status = 'manual_required';
-        pane.state.errorMessage = '服务视图未就绪';
-        options.renderPane(pane);
-        return;
-      }
+        if (!navigation.ok) {
+          pane.state.status = 'error';
+          pane.state.errorMessage = navigation.errorMessage;
+          options.renderPane(pane);
+          return;
+        }
 
-      try {
+        pane.state.status = 'sending';
+        pane.state.errorMessage = null;
+        options.renderPane(pane);
+
+        if (typeof pane.webview.executeJavaScript !== 'function') {
+          if (sendGeneration !== pane.sendGeneration) {
+            return;
+          }
+
+          pane.state.status = 'manual_required';
+          pane.state.errorMessage = '服务视图未就绪';
+          options.renderPane(pane);
+          return;
+        }
+
         const result =
           pane.service.send.mode === 'physical'
             ? await sendPromptWithPhysicalInput(pane, prompt)
@@ -1213,6 +1304,7 @@ async function sendPrompt(options: {
           pane.state.status = 'manual_required';
           pane.state.errorMessage = '需人工确认';
         }
+        options.renderPane(pane);
       } catch (error) {
         if (sendGeneration !== pane.sendGeneration) {
           return;
@@ -1220,9 +1312,12 @@ async function sendPrompt(options: {
 
         pane.state.status = 'error';
         pane.state.errorMessage = toShortError(error);
+        options.renderPane(pane);
+      } finally {
+        if (sendGeneration === pane.sendGeneration) {
+          pane.isSendPending = false;
+        }
       }
-
-      options.renderPane(pane);
     })
   );
 
@@ -1234,10 +1329,11 @@ async function navigatePaneHomeForSend(
   sendGeneration: number
 ): Promise<{ ok: true } | { ok: false; errorMessage: string }> {
   try {
+    pane.webview.setAttribute('partition', pane.service.partition);
+    pane.webview.setAttribute('src', pane.service.url);
     if (typeof pane.webview.loadURL === 'function') {
       await pane.webview.loadURL(pane.service.url);
     } else {
-      pane.webview.setAttribute('src', pane.service.url);
       await waitForWebviewReady(pane.webview, 8000);
     }
   } catch (error) {
@@ -1254,6 +1350,47 @@ async function navigatePaneHomeForSend(
 
   pane.hasDomReady = true;
   return { ok: true };
+}
+
+function startSearchPaneNavigation(pane: PaneRuntime, render: () => void): void {
+  if (!pane.state.enabled || pane.isSendPending) {
+    return;
+  }
+
+  const currentSrc = pane.webview.getAttribute('src');
+  if (currentSrc === pane.service.url && pane.hasDomReady) {
+    if (pane.state.status === 'unloaded' || pane.state.status === 'released') {
+      pane.state.status = 'ready';
+      render();
+    }
+    return;
+  }
+
+  if (currentSrc === pane.service.url) {
+    if (pane.state.status === 'unloaded' || pane.state.status === 'released') {
+      pane.state.status = 'loading';
+      render();
+    }
+    return;
+  }
+
+  pane.webview.setAttribute('partition', pane.service.partition);
+  pane.webview.setAttribute('src', pane.service.url);
+  pane.hasDomReady = false;
+  pane.state.status = 'loading';
+  pane.state.errorMessage = null;
+  render();
+}
+
+function releaseWebview(webview: RendererWebviewElement): void {
+  if (!webview.getAttribute('src')) {
+    return;
+  }
+
+  if (typeof webview.loadURL === 'function') {
+    void Promise.resolve(webview.loadURL('about:blank')).catch(() => {});
+  }
+  webview.removeAttribute('src');
 }
 
 function waitForWebviewReady(webview: RendererWebviewElement, timeoutMs: number): Promise<void> {
@@ -2059,9 +2196,14 @@ function renderPane(
   pane.expandButton.textContent = layout === 'expanded' ? '↙' : '⛶';
   pane.expandButton.title = layout === 'expanded' ? '还原' : '放大';
   pane.expandButton.setAttribute('aria-label', layout === 'expanded' ? '还原' : '放大');
-  pane.errorText.textContent = pane.state.errorMessage ?? '';
-  pane.errorText.title = pane.state.errorMessage ?? '';
-  pane.webview.hidden = !pane.state.enabled;
+  pane.errorText.textContent =
+    pane.state.errorMessage ??
+    (pane.state.status === 'unloaded' || pane.state.status === 'released'
+      ? statusLabels[pane.state.status]
+      : '');
+  pane.errorText.title = pane.state.errorMessage ?? statusLabels[pane.state.status];
+  pane.webview.hidden =
+    !pane.state.enabled || pane.state.status === 'unloaded' || pane.state.status === 'released';
 }
 
 function navigatePaneHome(pane: PaneRuntime, render: () => void): void {
@@ -2070,6 +2212,8 @@ function navigatePaneHome(pane: PaneRuntime, render: () => void): void {
   pane.hasDomReady = false;
   pane.state.status = pane.state.enabled ? 'loading' : 'disabled';
   pane.state.errorMessage = null;
+  pane.webview.setAttribute('partition', pane.service.partition);
+  pane.webview.setAttribute('src', pane.service.url);
   render();
 
   if (typeof pane.webview.loadURL === 'function') {

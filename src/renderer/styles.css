@@ -443,8 +443,14 @@ body {
   background: #9ca3af;
 }
 
+.pane-status-dot[data-status='unloaded'],
+.pane-status-dot[data-status='released'] {
+  background: #6b7280;
+}
+
 .pane-status-dot[data-status='ready'],
-.pane-status-dot[data-status='sent'] {
+.pane-status-dot[data-status='sent'],
+.pane-status-dot[data-status='warm'] {
   background: #16a34a;
 }
 
@@ -489,6 +495,8 @@ body {
 
 .pane-body {
   min-height: 0;
+  position: relative;
+  display: grid;
 }
 
 .pane-webview {
@@ -497,6 +505,30 @@ body {
   min-height: 280px;
   border: 0;
   background: #fff;
+}
+
+.service-pane[data-status='unloaded'] .pane-body::before,
+.service-pane[data-status='released'] .pane-body::before,
+.code-site-pane[data-status='unloaded'] .code-site-body::before,
+.code-site-pane[data-status='released'] .code-site-body::before {
+  min-height: 280px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #6b7280;
+  background: #f9fafb;
+  font-size: 13px;
+  text-align: center;
+}
+
+.service-pane[data-status='unloaded'] .pane-body::before,
+.code-site-pane[data-status='unloaded'] .code-site-body::before {
+  content: '未加载，查看或发送时加载';
+}
+
+.service-pane[data-status='released'] .pane-body::before,
+.code-site-pane[data-status='released'] .code-site-body::before {
+  content: '已释放，需要时会重新加载';
 }
 
 .code-workflow {
@@ -720,12 +752,7 @@ body {
 
 .code-site-body {
   min-height: 0;
-}
-
-.code-site-pane[data-status="idle"] .pane-webview {
-  background:
-    linear-gradient(135deg, rgba(17, 24, 39, 0.04), rgba(17, 24, 39, 0)),
-    #fff;
+  display: grid;
 }
 
 @media (max-width: 1400px) {

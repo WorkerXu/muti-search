@@ -1,6 +1,9 @@
 export const PANE_STATUSES = [
+  'unloaded',
   'loading',
   'ready',
+  'warm',
+  'released',
   'login_required',
   'sending',
   'sent',
@@ -19,8 +22,11 @@ export type PaneState = {
 };
 
 export const statusLabels = Object.freeze({
+  unloaded: '未加载',
   loading: '加载中',
   ready: '就绪',
+  warm: '已预热',
+  released: '已释放',
   login_required: '需登录',
   sending: '发送中',
   sent: '已发送',
@@ -33,7 +39,7 @@ export function createInitialPaneState(): PaneState {
   return {
     enabled: true,
     selected: true,
-    status: 'loading',
+    status: 'unloaded',
     errorMessage: null
   };
 }
