@@ -776,12 +776,6 @@ export function createApp(root: HTMLDivElement): void {
     codeWorkflow.hidden = productTab !== 'code';
     searchTabButton.setAttribute('aria-pressed', String(productTab === 'search'));
     codeTabButton.setAttribute('aria-pressed', String(productTab === 'code'));
-    if (productTab === 'search') {
-      const activePane = panes.get(activePaneId);
-      if (activePane) {
-        startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
-      }
-    }
     for (const pane of panes.values()) {
       renderPane(pane, expandedPaneId, activePaneId);
     }
@@ -1091,6 +1085,10 @@ export function createApp(root: HTMLDivElement): void {
   searchTabButton.addEventListener('click', () => {
     productTab = 'search';
     releaseCodePanes();
+    const activePane = panes.get(activePaneId);
+    if (activePane) {
+      startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
+    }
     renderApp();
   });
 
@@ -1104,6 +1102,10 @@ export function createApp(root: HTMLDivElement): void {
 
   settingsButton.addEventListener('click', settingsOverlay.open);
 
+  const activePane = panes.get(activePaneId);
+  if (activePane) {
+    startSearchPaneNavigation(activePane, () => renderPane(activePane, expandedPaneId, activePaneId));
+  }
   renderApp();
   root.append(shell);
 }

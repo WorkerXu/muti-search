@@ -207,6 +207,21 @@ describe('createApp', () => {
     );
   });
 
+  it('does not restart search navigation after a site redirects away from its home url', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const chatgptPane = root.querySelector('[data-pane-id="chatgpt"]') as HTMLElement;
+    const chatgptWebview = chatgptPane.querySelector('webview') as MockWebview;
+
+    chatgptWebview.setAttribute('src', 'https://chatgpt.com/auth/login');
+    chatgptWebview.dispatchEvent(new Event('dom-ready'));
+
+    expect(chatgptWebview.getAttribute('src')).toBe('https://chatgpt.com/auth/login');
+    expect(chatgptPane.getAttribute('data-status')).toBe('ready');
+  });
+
   it('defaults to the search product tab and hides the legacy view mode switch', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
