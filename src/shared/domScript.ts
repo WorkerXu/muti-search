@@ -9,6 +9,21 @@ export type DomSendScriptResult = {
   errorMessage: string | null;
 };
 
+export type DomPreSendPrepareScriptInput = {
+  serviceId: string;
+};
+
+export type DomPreSendPrepareScriptResult = {
+  status: 'ok' | 'manual_required';
+  errorMessage: string | null;
+  rect?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+};
+
 export type DomSendTargetScriptInput = {
   inputSelectors: readonly string[];
   submitSelectors: readonly string[];
@@ -323,6 +338,275 @@ export function buildDomSendScript(input: DomSendScriptInput): string {
 
   activateAction(submit);
   return { status: 'sent', errorMessage: null };
+})();
+`;
+}
+
+export function buildDomPreSendPrepareScript(input: DomPreSendPrepareScriptInput): string {
+  const serviceId = JSON.stringify(input.serviceId);
+
+  return `
+(async () => {
+  const serviceId = ${serviceId};
+  const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const safeQueryAll = (selector) => {
+    try {
+      return Array.from(document.querySelectorAll(selector));
+    } catch {
+      return [];
+    }
+  };
+
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const textOf = (element) =>
+    [
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.textContent
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\\s+/g, ' ')
+      .trim();
+
+  const clickElement = (element) => {
+    element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    element.focus?.();
+
+    const rect = element.getBoundingClientRect();
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2
+    };
+    const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+    element.dispatchEvent(new Pointer('pointerdown', eventInit));
+    element.dispatchEvent(new MouseEvent('mousedown', eventInit));
+    element.dispatchEvent(new Pointer('pointerup', eventInit));
+    element.dispatchEvent(new MouseEvent('mouseup', eventInit));
+    if (typeof element.click === 'function') {
+      element.click();
+    } else {
+      element.dispatchEvent(new MouseEvent('click', eventInit));
+    }
+  };
+
+  const rectOf = (element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+  };
+
+  const waitFor = async (finder, timeoutMs = 3000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const found = finder();
+      if (found) return found;
+      await sleep(100);
+    }
+    return null;
+  };
+
+  const findDoubaoModeButton = () => {
+    const minTop = window.innerHeight * 0.45;
+    const candidates = safeQueryAll('button,[role="button"]')
+      .filter(isVisible)
+      .filter((element) => /^(快速|专家)$/.test((element.textContent || '').trim()))
+      .filter((element) => element.getBoundingClientRect().top >= minTop);
+
+    return candidates.sort((left, right) => {
+      const a = left.getBoundingClientRect();
+      const b = right.getBoundingClientRect();
+      return a.width * a.height - b.width * b.height;
+    })[0] ?? null;
+  };
+
+  const waitForDoubaoExpertMode = () =>
+    waitFor(() => {
+      const modeButton = findDoubaoModeButton();
+      return modeButton && /专家/.test(textOf(modeButton)) ? modeButton : null;
+    }, 3000);
+
+  const ensureDoubaoExpertMode = async () => {
+    const modeButton = await waitFor(findDoubaoModeButton, 3000);
+    if (!modeButton) {
+      return { status: 'manual_required', errorMessage: '未找到豆包模式按钮' };
+    }
+
+    if (/专家/.test(textOf(modeButton))) {
+      return { status: 'ok', errorMessage: null };
+    }
+
+    clickElement(modeButton);
+    const expertOption = await waitFor(() => {
+      const explicitOption = safeQueryAll('[role="menuitem"],[role="option"]')
+        .filter(isVisible)
+        .find((element) => /专家/.test(textOf(element)));
+      if (explicitOption) {
+        return explicitOption;
+      }
+
+      return safeQueryAll('button')
+        .filter(isVisible)
+        .filter((element) => element !== modeButton)
+        .find((element) => /专家/.test(textOf(element))) ?? null;
+    });
+
+    if (!expertOption) {
+      return { status: 'manual_required', errorMessage: '未找到豆包专家模式' };
+    }
+
+    clickElement(expertOption);
+    const selectedMode = await waitForDoubaoExpertMode();
+    if (!selectedMode) {
+      return { status: 'manual_required', errorMessage: '豆包专家模式未生效' };
+    }
+
+    return { status: 'ok', errorMessage: null };
+  };
+
+  const findDeepSeekExpertRadio = () =>
+    safeQueryAll('[role="radio"],button,[role="button"]')
+      .filter(isVisible)
+      .find((element) => /专家模式/.test(textOf(element))) ?? null;
+
+  const hasDeepSeekSelectedRadioClass = (expertRadio) => {
+    const group = expertRadio.closest('[role="radiogroup"]');
+    if (!group) {
+      return false;
+    }
+
+    const radios = safeQueryAll('[role="radio"]')
+      .filter((element) => group.contains(element))
+      .filter(isVisible);
+    if (radios.length < 2) {
+      return false;
+    }
+
+    const classTokens = (element) =>
+      new Set((element.getAttribute('class') || '').split(/\\s+/).filter(Boolean));
+    const expertTokens = classTokens(expertRadio);
+    if (expertTokens.size === 0) {
+      return false;
+    }
+
+    const sharedTokens = new Set(expertTokens);
+    for (const radio of radios) {
+      if (radio === expertRadio) {
+        continue;
+      }
+
+      const tokens = classTokens(radio);
+      for (const token of Array.from(sharedTokens)) {
+        if (!tokens.has(token)) {
+          sharedTokens.delete(token);
+        }
+      }
+    }
+
+    return Array.from(expertTokens).some((token) => !sharedTokens.has(token));
+  };
+
+  const isDeepSeekExpertModeSelected = () =>
+    safeQueryAll('h1,h2,h3,div,span')
+      .filter(isVisible)
+      .some((element) => /使用专家模式开始对话/.test(textOf(element))) ||
+    safeQueryAll('[role="radio"]')
+      .filter(isVisible)
+      .some((element) => {
+        if (!/专家模式/.test(textOf(element))) {
+          return false;
+        }
+
+        return element.getAttribute('aria-checked') === 'true' ||
+          element.getAttribute('aria-pressed') === 'true' ||
+          element.getAttribute('aria-selected') === 'true' ||
+          /(^|[\\s_-])(selected|active|checked)($|[\\s_-])/.test(element.getAttribute('class') || '') ||
+          hasDeepSeekSelectedRadioClass(element);
+      });
+
+  const ensureDeepSeekExpertMode = async () => {
+    if (isDeepSeekExpertModeSelected()) {
+      return { status: 'ok', errorMessage: null };
+    }
+
+    const expertRadio = await waitFor(findDeepSeekExpertRadio, 3000);
+    if (!expertRadio) {
+      return { status: 'manual_required', errorMessage: '未找到 DeepSeek 专家模式' };
+    }
+
+    clickElement(expertRadio);
+    const selected = await waitFor(() => (isDeepSeekExpertModeSelected() ? true : null), 3000);
+    if (!selected) {
+      return {
+        status: 'manual_required',
+        errorMessage: 'DeepSeek 专家模式未生效',
+        rect: rectOf(expertRadio)
+      };
+    }
+
+    return { status: 'ok', errorMessage: null };
+  };
+
+  const findGeminiModelButton = () =>
+    safeQueryAll('button')
+      .filter(isVisible)
+      .find((element) => /打开模式选择器|模式选择器|model/i.test(textOf(element))) ?? null;
+
+  const ensureGeminiPro31 = async () => {
+    const modelButton = await waitFor(findGeminiModelButton, 3000);
+    if (!modelButton) {
+      return { status: 'manual_required', errorMessage: '未找到 Gemini 模型选择器' };
+    }
+
+    clickElement(modelButton);
+    const proOption = await waitFor(() =>
+      safeQueryAll('[role="menuitem"],[role="option"],button')
+        .filter(isVisible)
+        .find((element) => /3\\.1\\s*Pro/i.test(textOf(element)))
+    );
+
+    if (!proOption) {
+      return { status: 'manual_required', errorMessage: '未找到 Gemini 3.1 Pro' };
+    }
+
+    if (!/已选中|selected/i.test(textOf(proOption))) {
+      clickElement(proOption);
+      await sleep(300);
+    }
+
+    return { status: 'ok', errorMessage: null };
+  };
+
+  if (serviceId === 'doubao') {
+    return ensureDoubaoExpertMode();
+  }
+
+  if (serviceId === 'deepseek') {
+    return ensureDeepSeekExpertMode();
+  }
+
+  if (serviceId === 'gemini') {
+    return ensureGeminiPro31();
+  }
+
+  return { status: 'ok', errorMessage: null };
 })();
 `;
 }

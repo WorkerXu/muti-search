@@ -3,12 +3,14 @@ import {
   buildDomExtractAnswerScript,
   buildDomFillScript,
   buildDomPromptStateScript,
+  buildDomPreSendPrepareScript,
   buildDomSendTargetScript,
   buildDomSendScript,
   type DomActivateSubmitScriptResult,
   type DomExtractAnswerScriptResult,
   type DomFillScriptResult,
   type DomPromptStateScriptResult,
+  type DomPreSendPrepareScriptResult,
   type DomSendTargetScriptResult,
   type DomSendScriptResult
 } from '../shared/domScript';
@@ -130,6 +132,7 @@ type CodePaneRuntime = {
   webview: RendererWebviewElement;
   sidebarButton: HTMLButtonElement;
   sidebarStatusDot: HTMLSpanElement;
+  reloadButton: HTMLButtonElement;
   status: WebViewLifecycleStatus;
   inFlightCount: number;
 };
@@ -180,12 +183,17 @@ export function createApp(root: HTMLDivElement): void {
   topBar.className = 'top-bar';
   shell.append(topBar);
 
+  const searchTopControls = document.createElement('div');
+  searchTopControls.className = 'top-workflow-controls search-top-controls';
+  searchTopControls.dataset.testid = 'search-top-controls';
+  topBar.append(searchTopControls);
+
   const promptInput = document.createElement('input');
   promptInput.type = 'text';
   promptInput.className = 'prompt-input';
   promptInput.placeholder = '把同一个问题发给多个 AI 服务';
   promptInput.autocomplete = 'off';
-  topBar.append(promptInput);
+  searchTopControls.append(promptInput);
 
   const toggleStrip = document.createElement('div');
   toggleStrip.className = 'toggle-strip';
@@ -236,6 +244,19 @@ export function createApp(root: HTMLDivElement): void {
   instanceBadge.textContent = getRuntimeInstanceLabel();
   topBar.append(instanceBadge);
 
+  const codeTopControls = document.createElement('div');
+  codeTopControls.className = 'top-workflow-controls code-top-controls';
+  codeTopControls.dataset.testid = 'code-top-controls';
+  topBar.insertBefore(codeTopControls, productTabSwitch);
+
+  const codeRepositoryGroup = document.createElement('div');
+  codeRepositoryGroup.className = 'code-top-control-group code-repository-group';
+  codeTopControls.append(codeRepositoryGroup);
+
+  const codeQuestionGroup = document.createElement('div');
+  codeQuestionGroup.className = 'code-top-control-group code-question-group';
+  codeTopControls.append(codeQuestionGroup);
+
   const topError = document.createElement('p');
   topError.className = 'top-error';
   topError.dataset.topError = 'true';
@@ -277,24 +298,20 @@ export function createApp(root: HTMLDivElement): void {
   codeWorkflow.dataset.testid = 'code-workflow';
   appBody.append(codeWorkflow);
 
-  const codeToolbar = document.createElement('div');
-  codeToolbar.className = 'code-toolbar';
-  codeWorkflow.append(codeToolbar);
-
   const codeRepositoryInput = document.createElement('input');
   codeRepositoryInput.type = 'text';
   codeRepositoryInput.className = 'code-repository-input';
   codeRepositoryInput.dataset.testid = 'code-repository-input';
   codeRepositoryInput.placeholder = '输入 GitHub 仓库，如 obra/superpowers';
   codeRepositoryInput.autocomplete = 'off';
-  codeToolbar.append(codeRepositoryInput);
+  codeRepositoryGroup.append(codeRepositoryInput);
 
   const codeOpenButton = document.createElement('button');
   codeOpenButton.type = 'button';
   codeOpenButton.className = 'code-open-button';
   codeOpenButton.dataset.testid = 'code-open-button';
   codeOpenButton.textContent = '打开仓库';
-  codeToolbar.append(codeOpenButton);
+  codeRepositoryGroup.append(codeOpenButton);
 
   const codeRepositoryCurrent = document.createElement('p');
   codeRepositoryCurrent.className = 'code-repository-current';
@@ -306,24 +323,20 @@ export function createApp(root: HTMLDivElement): void {
   codeRepositoryError.dataset.testid = 'code-repository-error';
   codeWorkflow.append(codeRepositoryError);
 
-  const codeQuestionToolbar = document.createElement('div');
-  codeQuestionToolbar.className = 'code-qa-toolbar';
-  codeWorkflow.append(codeQuestionToolbar);
-
   const codeQuestionInput = document.createElement('input');
   codeQuestionInput.type = 'text';
   codeQuestionInput.className = 'code-qa-input';
   codeQuestionInput.dataset.testid = 'code-question-input';
   codeQuestionInput.placeholder = '询问当前仓库';
   codeQuestionInput.autocomplete = 'off';
-  codeQuestionToolbar.append(codeQuestionInput);
+  codeQuestionGroup.append(codeQuestionInput);
 
   const codeQuestionSendButton = document.createElement('button');
   codeQuestionSendButton.type = 'button';
   codeQuestionSendButton.className = 'code-qa-send-button';
   codeQuestionSendButton.dataset.testid = 'code-question-send-button';
   codeQuestionSendButton.textContent = '发送问题';
-  codeQuestionToolbar.append(codeQuestionSendButton);
+  codeQuestionGroup.append(codeQuestionSendButton);
 
   const codeQuestionErrorText = document.createElement('p');
   codeQuestionErrorText.className = 'code-qa-error';
@@ -381,6 +394,7 @@ export function createApp(root: HTMLDivElement): void {
       const layout = activeCodeSiteId === pane.site.id ? 'single-active' : 'single-hidden';
       pane.article.dataset.layout = layout;
       pane.sidebarButton.setAttribute('aria-current', String(activeCodeSiteId === pane.site.id));
+      pane.reloadButton.disabled = activeRepository === null;
     }
   };
 
@@ -390,8 +404,26 @@ export function createApp(root: HTMLDivElement): void {
   ): void => {
     const url = buildCodeSiteUrl(pane.site.id, repository);
     pane.webview.setAttribute('partition', pane.site.partition);
-    pane.webview.setAttribute('src', url);
+    startWebviewNavigation(pane.webview, url);
     setCodePaneStatus(pane, 'loading');
+  };
+
+  const reloadCodePane = (pane: CodePaneRuntime): void => {
+    if (!activeRepository) {
+      return;
+    }
+
+    loadCodePaneForRepository(pane, activeRepository);
+  };
+
+  const forceReloadCodePanes = (): void => {
+    if (!activeRepository) {
+      return;
+    }
+
+    for (const pane of codePanes.values()) {
+      reloadCodePane(pane);
+    }
   };
 
   const ensureCodePanesLoaded = (): void => {
@@ -435,6 +467,16 @@ export function createApp(root: HTMLDivElement): void {
   const loadSearchPanes = (): void => {
     for (const pane of panes.values()) {
       startSearchPaneNavigation(pane, () => renderPane(pane, expandedPaneId, activePaneId));
+    }
+  };
+
+  const forceLoadSearchPanesHome = (): void => {
+    for (const pane of panes.values()) {
+      if (!pane.state.enabled || pane.isSendPending) {
+        continue;
+      }
+
+      navigatePaneHome(pane, () => renderPane(pane, expandedPaneId, activePaneId));
     }
   };
 
@@ -727,6 +769,7 @@ export function createApp(root: HTMLDivElement): void {
     activeRepository = parsed.repository;
     codeInputError = null;
     renderCodeRepositoryMeta();
+    renderCodePanes();
 
     if (productTab === 'code') {
       ensureCodePanesLoaded();
@@ -772,6 +815,15 @@ export function createApp(root: HTMLDivElement): void {
     statusText.className = 'code-site-status';
     header.append(statusText);
 
+    const reloadButton = document.createElement('button');
+    reloadButton.type = 'button';
+    reloadButton.className = 'pane-action-button';
+    reloadButton.dataset.codeSiteReload = site.id;
+    reloadButton.textContent = '↻';
+    reloadButton.title = '刷新代码页';
+    reloadButton.setAttribute('aria-label', '刷新代码页');
+    header.append(reloadButton);
+
     const errorText = document.createElement('p');
     errorText.className = 'code-site-error';
     article.append(errorText);
@@ -794,6 +846,7 @@ export function createApp(root: HTMLDivElement): void {
       webview,
       sidebarButton,
       sidebarStatusDot,
+      reloadButton,
       status: 'unloaded',
       inFlightCount: 0
     };
@@ -827,6 +880,10 @@ export function createApp(root: HTMLDivElement): void {
       activeCodeSiteId = site.id;
       renderCodePanes();
     });
+
+    reloadButton.addEventListener('click', () => {
+      reloadCodePane(pane);
+    });
   }
 
   renderCodeRepositoryMeta();
@@ -837,6 +894,10 @@ export function createApp(root: HTMLDivElement): void {
     appBody.dataset.productTab = productTab;
     searchWorkflow.hidden = productTab !== 'search';
     codeWorkflow.hidden = productTab !== 'code';
+    searchTopControls.hidden = productTab !== 'search';
+    codeTopControls.hidden = productTab !== 'code';
+    toggleStrip.hidden = productTab !== 'search';
+    sendButton.hidden = productTab !== 'search';
     searchTabButton.setAttribute('aria-pressed', String(productTab === 'search'));
     codeTabButton.setAttribute('aria-pressed', String(productTab === 'code'));
     for (const pane of panes.values()) {
@@ -1145,7 +1206,8 @@ export function createApp(root: HTMLDivElement): void {
   searchTabButton.addEventListener('click', () => {
     productTab = 'search';
     releaseCodePanes();
-    loadSearchPanes();
+    renderApp();
+    forceLoadSearchPanesHome();
     renderApp();
   });
 
@@ -1153,15 +1215,16 @@ export function createApp(root: HTMLDivElement): void {
     productTab = 'code';
     expandedPaneId = null;
     releaseSearchPanes();
-    ensureCodePanesLoaded();
+    renderApp();
+    forceReloadCodePanes();
     renderApp();
   });
 
   settingsButton.addEventListener('click', settingsOverlay.open);
 
+  root.append(shell);
   loadSearchPanes();
   renderApp();
-  root.append(shell);
 }
 
 function createSettingsOverlay(): { element: HTMLElement; open: () => void } {
@@ -1336,6 +1399,18 @@ async function sendPrompt(options: {
           return;
         }
 
+        const prepareResult = await preparePaneBeforeSend(pane);
+        if (sendGeneration !== pane.sendGeneration) {
+          return;
+        }
+
+        if (prepareResult.status !== 'ok') {
+          pane.state.status = 'manual_required';
+          pane.state.errorMessage = prepareResult.errorMessage ?? '需人工确认发送前模式';
+          options.renderPane(pane);
+          return;
+        }
+
         const result =
           pane.service.send.mode === 'physical'
             ? await sendPromptWithPhysicalInput(pane, prompt)
@@ -1380,6 +1455,48 @@ async function sendPrompt(options: {
   return targets.map((pane) => pane.service.id);
 }
 
+async function preparePaneBeforeSend(pane: PaneRuntime): Promise<DomPreSendPrepareScriptResult> {
+  if (
+    pane.service.id !== 'doubao' &&
+    pane.service.id !== 'deepseek' &&
+    pane.service.id !== 'gemini'
+  ) {
+    return { status: 'ok', errorMessage: null };
+  }
+
+  const result = normalizeDomPreSendPrepareResult(
+    await pane.webview.executeJavaScript(
+      buildDomPreSendPrepareScript({
+        serviceId: pane.service.id
+      }),
+      true
+    )
+  );
+
+  if (
+    pane.service.id === 'deepseek' &&
+    result?.status === 'manual_required' &&
+    result.rect &&
+    typeof pane.webview.sendInputEvent === 'function'
+  ) {
+    await clickWebviewPoint(pane.webview, rectCenter(result.rect));
+    await sleep(600);
+
+    const retryResult = normalizeDomPreSendPrepareResult(
+      await pane.webview.executeJavaScript(
+        buildDomPreSendPrepareScript({
+          serviceId: pane.service.id
+        }),
+        true
+      )
+    );
+
+    return retryResult ?? result;
+  }
+
+  return result ?? { status: 'manual_required', errorMessage: '发送前模式准备失败' };
+}
+
 async function navigatePaneHomeForSend(
   pane: PaneRuntime,
   sendGeneration: number
@@ -1420,18 +1537,34 @@ function startSearchPaneNavigation(pane: PaneRuntime, render: () => void): void 
 
   if (currentSrc) {
     if (pane.state.status === 'unloaded' || pane.state.status === 'released') {
+      pane.webview.setAttribute('partition', pane.service.partition);
+      pane.hasDomReady = false;
       pane.state.status = 'loading';
+      pane.state.errorMessage = null;
       render();
+      startWebviewNavigation(pane.webview, pane.service.url);
     }
     return;
   }
 
   pane.webview.setAttribute('partition', pane.service.partition);
-  pane.webview.setAttribute('src', pane.service.url);
   pane.hasDomReady = false;
   pane.state.status = 'loading';
   pane.state.errorMessage = null;
   render();
+  startWebviewNavigation(pane.webview, pane.service.url);
+}
+
+function startWebviewNavigation(webview: RendererWebviewElement, url: string): void {
+  webview.setAttribute('src', url);
+  if (typeof webview.loadURL === 'function') {
+    try {
+      void Promise.resolve(webview.loadURL(url)).catch(() => {});
+    } catch {
+      // Some Electron webviews throw while their guest is still being created.
+      // The src attribute still lets the webview continue attaching normally.
+    }
+  }
 }
 
 function releaseWebview(webview: RendererWebviewElement): void {
@@ -2118,6 +2251,43 @@ function normalizeDomSendResult(value: unknown): DomSendScriptResult | null {
   };
 }
 
+function normalizeDomPreSendPrepareResult(value: unknown): DomPreSendPrepareScriptResult | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const status = Reflect.get(value, 'status');
+  const errorMessage = Reflect.get(value, 'errorMessage');
+  const rect = Reflect.get(value, 'rect');
+
+  if (status !== 'ok' && status !== 'manual_required') {
+    return null;
+  }
+
+  const normalizedRect =
+    rect && typeof rect === 'object'
+      ? {
+          x: Number(Reflect.get(rect, 'x')),
+          y: Number(Reflect.get(rect, 'y')),
+          width: Number(Reflect.get(rect, 'width')),
+          height: Number(Reflect.get(rect, 'height'))
+        }
+      : null;
+
+  return {
+    status,
+    errorMessage: typeof errorMessage === 'string' ? errorMessage : null,
+    rect:
+      normalizedRect &&
+      Number.isFinite(normalizedRect.x) &&
+      Number.isFinite(normalizedRect.y) &&
+      Number.isFinite(normalizedRect.width) &&
+      Number.isFinite(normalizedRect.height)
+        ? normalizedRect
+        : null
+  };
+}
+
 function normalizeDomFillResult(value: unknown): DomFillScriptResult | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -2269,15 +2439,21 @@ function navigatePaneHome(pane: PaneRuntime, render: () => void): void {
   render();
 
   if (typeof pane.webview.loadURL === 'function') {
-    void pane.webview.loadURL(pane.service.url).catch((error: unknown) => {
-      if (navigationGeneration !== pane.sendGeneration || !pane.state.enabled) {
-        return;
-      }
+    try {
+      void Promise.resolve(pane.webview.loadURL(pane.service.url)).catch((error: unknown) => {
+        if (navigationGeneration !== pane.sendGeneration || !pane.state.enabled) {
+          return;
+        }
 
+        pane.state.status = 'error';
+        pane.state.errorMessage = toShortError(error);
+        render();
+      });
+    } catch (error) {
       pane.state.status = 'error';
       pane.state.errorMessage = toShortError(error);
       render();
-    });
+    }
     return;
   }
 

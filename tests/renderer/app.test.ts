@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDomActivateSubmitScript,
   buildDomExtractAnswerScript,
   buildDomPromptStateScript,
+  buildDomPreSendPrepareScript,
   buildDomSendTargetScript,
   buildDomSendScript
 } from '../../src/shared/domScript';
@@ -61,6 +63,12 @@ function codeWebviewsFrom(root: HTMLDivElement): MockWebview[] {
   ) as MockWebview[];
 }
 
+function cssRuleBody(css: string, selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`).exec(css);
+  return match?.[1] ?? '';
+}
+
 function createDeferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -75,7 +83,13 @@ function createDeferred<T>(): Deferred<T> {
 function mockSuccessfulSends(executeJavaScriptMocks: ReturnType<typeof createMockExecuteJavaScript>[]) {
   services.forEach((service, index) => {
     if (service.send.mode === 'physical') {
-      const mock = executeJavaScriptMocks[index]
+      const mock = executeJavaScriptMocks[index];
+
+      if (service.id === 'gemini') {
+        mock.mockResolvedValueOnce({ status: 'ok', errorMessage: null });
+      }
+
+      mock
         .mockResolvedValueOnce({
           status: 'ok',
           rect: { x: 10, y: 20, width: 200, height: 40 },
@@ -106,6 +120,13 @@ function mockSuccessfulSends(executeJavaScriptMocks: ReturnType<typeof createMoc
           hasPrompt: false,
           errorMessage: null
         });
+      return;
+    }
+
+    if (service.id === 'doubao' || service.id === 'deepseek') {
+      executeJavaScriptMocks[index]
+        .mockResolvedValueOnce({ status: 'ok', errorMessage: null })
+        .mockResolvedValue({ status: 'sent', errorMessage: null });
       return;
     }
 
@@ -142,7 +163,7 @@ describe('createApp', () => {
     createApp(root);
 
     expect(root.querySelector('input[type="text"]')).not.toBeNull();
-    expect(root.querySelector('button[type="button"]')?.textContent).toContain('发送到已选');
+    expect(root.querySelector('.send-button')?.textContent).toContain('发送到已选');
     expect((root.querySelector('[data-testid="export-button"]') as HTMLButtonElement).hidden).toBe(
       true
     );
@@ -207,6 +228,128 @@ describe('createApp', () => {
     );
   });
 
+  it('keeps inactive menu panes layout-mounted so webviews can preload', () => {
+    const css = readFileSync('src/renderer/styles.css', 'utf8');
+
+    expect(cssRuleBody(css, ".service-pane[data-layout='single-hidden']")).not.toContain(
+      'display: none'
+    );
+    expect(cssRuleBody(css, ".service-pane[data-layout='single-hidden']")).not.toContain(
+      'opacity: 0'
+    );
+    expect(cssRuleBody(css, ".service-pane[data-layout='collapsed']")).not.toContain(
+      'display: none'
+    );
+    expect(cssRuleBody(css, ".service-pane[data-layout='collapsed']")).not.toContain(
+      'opacity: 0'
+    );
+    expect(cssRuleBody(css, ".code-site-pane[data-layout='single-hidden']")).not.toContain(
+      'display: none'
+    );
+    expect(cssRuleBody(css, ".code-site-pane[data-layout='single-hidden']")).not.toContain(
+      'opacity: 0'
+    );
+  });
+
+  it('keeps hidden webviews full-size instead of shrinking them to tiny prewarm surfaces', () => {
+    const css = readFileSync('src/renderer/styles.css', 'utf8');
+
+    expect(cssRuleBody(css, ".service-pane[data-layout='single-hidden']")).toContain('inset: 0');
+    expect(cssRuleBody(css, ".service-pane[data-layout='single-hidden']")).not.toContain(
+      'width: 8px'
+    );
+    expect(
+      cssRuleBody(
+        css,
+        ".service-pane[data-layout='collapsed'] .pane-body,\n.service-pane[data-layout='single-hidden'] .pane-body,\n.service-pane[data-layout='collapsed'] .pane-webview,\n.service-pane[data-layout='single-hidden'] .pane-webview"
+      )
+    ).not.toContain('width: 8px');
+    expect(cssRuleBody(css, ".code-site-pane[data-layout='single-hidden']")).toContain(
+      'inset: 0'
+    );
+    expect(cssRuleBody(css, ".code-site-pane[data-layout='single-hidden']")).not.toContain(
+      'width: 8px'
+    );
+  });
+
+  it('renders loading status as active progress instead of unloaded gray', () => {
+    const css = readFileSync('src/renderer/styles.css', 'utf8');
+
+    expect(cssRuleBody(css, ".pane-status-dot[data-status='loading']")).toContain('#2563eb');
+  });
+
+  it('mounts webviews before starting initial search navigation', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    const createElement = document.createElement.bind(document);
+    const loadURL = vi.fn<(url: string) => Promise<void>>(function (
+      this: HTMLElement,
+      _url: string
+    ) {
+      if (!this.isConnected) {
+        throw new Error('webview must be connected before loadURL');
+      }
+
+      return Promise.resolve();
+    });
+
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((
+      tagName: string,
+      options?: ElementCreationOptions
+    ) => {
+      const element = createElement(tagName, options);
+      if (tagName.toLowerCase() === 'webview') {
+        (element as MockWebview).loadURL = loadURL;
+      }
+
+      return element;
+    }) as typeof document.createElement);
+
+    try {
+      createApp(root);
+    } finally {
+      createElementSpy.mockRestore();
+    }
+
+    expect(loadURL).toHaveBeenCalledTimes(services.length);
+    expect(root.querySelector('[data-testid="app-body"]')).not.toBeNull();
+  });
+
+  it('continues activating every search webview when a webview loadURL throws synchronously', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    const createElement = document.createElement.bind(document);
+    const loadURL = vi.fn<(url: string) => Promise<void>>(() => {
+      throw new Error('webview guest is not ready yet');
+    });
+
+    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((
+      tagName: string,
+      options?: ElementCreationOptions
+    ) => {
+      const element = createElement(tagName, options);
+      if (tagName.toLowerCase() === 'webview') {
+        (element as MockWebview).loadURL = loadURL;
+      }
+
+      return element;
+    }) as typeof document.createElement);
+
+    try {
+      expect(() => createApp(root)).not.toThrow();
+    } finally {
+      createElementSpy.mockRestore();
+    }
+
+    const webviews = Array.from(root.querySelectorAll('[data-pane-id] webview')) as MockWebview[];
+    expect(webviews.map((webview) => webview.getAttribute('src'))).toEqual(
+      services.map((service) => service.url)
+    );
+    expect(
+      services.map((service) =>
+        root.querySelector(`[data-pane-id="${service.id}"]`)?.getAttribute('data-status')
+      )
+    ).toEqual(services.map(() => 'loading'));
+  });
+
   it('does not restart search navigation after a site redirects away from its home url', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
@@ -266,6 +409,7 @@ describe('createApp', () => {
     const root = document.querySelector('#app') as HTMLDivElement;
 
     createApp(root);
+    const { loadURLMocks } = attachWebviewMocks(root);
 
     const originalWebviews = Array.from(root.querySelectorAll('webview'));
     const shell = root.querySelector('.app-shell') as HTMLElement;
@@ -288,6 +432,9 @@ describe('createApp', () => {
     expect(codeWorkflow.hidden).toBe(false);
     expect(codeWorkflow.textContent).toContain('Zread');
     expect(Array.from(root.querySelectorAll('webview'))).toEqual(originalWebviews);
+    expect(loadURLMocks.slice(0, services.length).map((mock) => mock.mock.calls.at(-1)?.[0])).toEqual(
+      services.map(() => 'about:blank')
+    );
     expect(searchWebviews.map((webview) => webview.getAttribute('src'))).toEqual(
       services.map(() => null)
     );
@@ -305,6 +452,61 @@ describe('createApp', () => {
     expect(searchWebviews.map((webview) => webview.getAttribute('src'))).toEqual(
       services.map((service) => service.url)
     );
+    expect(loadURLMocks.slice(0, services.length).map((mock) => mock.mock.calls.at(-1)?.[0])).toEqual(
+      services.map((service) => service.url)
+    );
+  });
+
+  it('starts search webview navigation only after the search workflow is visible again', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+    const { loadURLMocks } = attachWebviewMocks(root);
+
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    const searchWorkflow = root.querySelector('[data-testid="search-workflow"]') as HTMLElement;
+    const hiddenStatesDuringNavigation: boolean[] = [];
+    const webviewHiddenStatesDuringNavigation: boolean[] = [];
+
+    for (const mock of loadURLMocks.slice(0, services.length)) {
+      mock.mockImplementation(function (this: MockWebview) {
+        hiddenStatesDuringNavigation.push(searchWorkflow.hidden);
+        webviewHiddenStatesDuringNavigation.push(this.hidden);
+        return Promise.resolve();
+      });
+    }
+
+    codeTab.click();
+
+    expect(() => searchTab.click()).not.toThrow();
+    expect(hiddenStatesDuringNavigation.every((isHidden) => isHidden === false)).toBe(true);
+    expect(webviewHiddenStatesDuringNavigation.every((isHidden) => isHidden === false)).toBe(true);
+    expect(loadURLMocks.slice(0, services.length).map((mock) => mock.mock.calls.at(-1)?.[0])).toEqual(
+      services.map((service) => service.url)
+    );
+  });
+
+  it('renavigates released search webviews even when a stale src remains', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+    const { loadURLMocks } = attachWebviewMocks(root);
+
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    const yuanbaoPane = root.querySelector('[data-pane-id="yuanbao"]') as HTMLElement;
+    const yuanbaoWebview = yuanbaoPane.querySelector('webview') as MockWebview;
+    const yuanbaoIndex = services.findIndex((service) => service.id === 'yuanbao');
+
+    codeTab.click();
+    yuanbaoWebview.setAttribute('src', 'about:blank');
+
+    searchTab.click();
+
+    expect(yuanbaoWebview.getAttribute('src')).toBe(getService('yuanbao').url);
+    expect(yuanbaoPane.getAttribute('data-status')).toBe('loading');
+    expect(loadURLMocks[yuanbaoIndex].mock.calls.at(-1)?.[0]).toBe(getService('yuanbao').url);
   });
 
   it('keeps the search workflow in single-pane mode and reuses existing webviews', () => {
@@ -351,6 +553,122 @@ describe('createApp', () => {
     expect(
       root.querySelector('[data-testid="code-site-pane-deepwiki"]')?.getAttribute('data-layout')
     ).toBe('single-active');
+  });
+
+  it('renders code repository and question controls in the top bar only for the code tab', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const topBar = root.querySelector('.top-bar') as HTMLElement;
+    const searchControls = root.querySelector('[data-testid="search-top-controls"]') as HTMLElement;
+    const codeControls = root.querySelector('[data-testid="code-top-controls"]') as HTMLElement;
+    const codeWorkflow = root.querySelector('[data-testid="code-workflow"]') as HTMLElement;
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    const searchTab = root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement;
+
+    expect(topBar.contains(root.querySelector('[data-testid="code-repository-input"]'))).toBe(true);
+    expect(topBar.contains(root.querySelector('[data-testid="code-question-input"]'))).toBe(true);
+    expect(
+      Boolean(
+        codeControls.compareDocumentPosition(
+          root.querySelector('.product-tab-switch') as HTMLElement
+        ) & Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true);
+    expect(codeWorkflow.querySelector('.code-toolbar')).toBeNull();
+    expect(codeWorkflow.querySelector('.code-qa-toolbar')).toBeNull();
+    expect(searchControls.hidden).toBe(false);
+    expect(codeControls.hidden).toBe(true);
+
+    codeTab.click();
+
+    expect(searchControls.hidden).toBe(true);
+    expect(codeControls.hidden).toBe(false);
+
+    searchTab.click();
+
+    expect(searchControls.hidden).toBe(false);
+    expect(codeControls.hidden).toBe(true);
+  });
+
+  it('collapses empty code status and history rows so the site area stays close to the top bar', () => {
+    const css = readFileSync('src/renderer/styles.css', 'utf8');
+
+    expect(cssRuleBody(css, '.top-error:empty')).toContain('display: none');
+    expect(cssRuleBody(css, '.code-repository-current:empty')).toContain('display: none');
+    expect(cssRuleBody(css, '.code-repository-error:empty')).toContain('display: none');
+    expect(cssRuleBody(css, '.code-qa-error:empty')).toContain('display: none');
+    expect(cssRuleBody(css, '.code-qa-history:empty')).toContain('display: none');
+  });
+
+  it('lets the selected workflow panes fill the remaining window height', () => {
+    const css = readFileSync('src/renderer/styles.css', 'utf8');
+
+    expect(cssRuleBody(css, 'html,\nbody')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, '.app-shell')).toMatch(/(^|\n)\s*height:\s*100vh;/);
+    expect(cssRuleBody(css, '.app-body')).toMatch(/(^|\n)\s*grid-row:\s*3;/);
+    expect(cssRuleBody(css, '.app-body')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, '.search-workflow')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, '.pane-grid')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, ".service-pane[data-layout='single-active']")).toMatch(
+      /(^|\n)\s*height:\s*100%;/
+    );
+    expect(cssRuleBody(css, '.code-workflow')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, '.code-site-area')).toMatch(/(^|\n)\s*grid-row:\s*5;/);
+    expect(cssRuleBody(css, '.code-site-area')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, '.code-pane-grid')).toMatch(/(^|\n)\s*height:\s*100%;/);
+    expect(cssRuleBody(css, ".code-site-pane[data-layout='single-active']")).toMatch(
+      /(^|\n)\s*height:\s*100%;/
+    );
+  });
+
+  it('reloads the active repository url from a code site header button', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { loadURLMocks } = attachWebviewMocks(root);
+    (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const zreadReload = root.querySelector(
+      '[data-code-site-reload="zread"]'
+    ) as HTMLButtonElement;
+    const zreadPane = root.querySelector('[data-testid="code-site-pane-zread"]') as HTMLElement;
+    const zreadWebview = zreadPane.querySelector('webview') as MockWebview;
+
+    zreadWebview.setAttribute('src', 'https://zread.ai/obra/superpowers/answer');
+    loadURLMocks.slice(-3)[0].mockClear();
+    zreadReload.click();
+
+    expect(loadURLMocks.slice(-3)[0]).toHaveBeenCalledWith('https://zread.ai/obra/superpowers');
+    expect(zreadWebview.getAttribute('src')).toBe('https://zread.ai/obra/superpowers');
+    expect(zreadPane.getAttribute('data-status')).toBe('loading');
+  });
+
+  it('forces every search pane home button behavior when the search tab is clicked', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { webviews, loadURLMocks } = attachWebviewMocks(root);
+
+    webviews.slice(0, services.length).forEach((webview, index) => {
+      webview.setAttribute('src', `${services[index].url}/answer`);
+      webview.dispatchEvent(new Event('dom-ready'));
+      loadURLMocks[index].mockClear();
+    });
+
+    (root.querySelector('[data-testid="product-tab-search"]') as HTMLButtonElement).click();
+
+    expect(loadURLMocks.slice(0, services.length).map((mock) => mock.mock.calls.at(-1)?.[0])).toEqual(
+      services.map((service) => service.url)
+    );
+    expect(webviews.slice(0, services.length).map((webview) => webview.getAttribute('src'))).toEqual(
+      services.map((service) => service.url)
+    );
   });
 
   it('does not navigate remote code sites before a valid repository is submitted', () => {
@@ -426,6 +744,31 @@ describe('createApp', () => {
     codeTab.click();
 
     expect(codeWebviews.map((webview) => webview.getAttribute('src'))).toEqual([
+      'https://zread.ai/obra/superpowers',
+      'https://deepwiki.com/obra/superpowers',
+      'https://codewiki.google/github.com/obra/superpowers'
+    ]);
+  });
+
+  it('forces every code site refresh behavior when the code tab is clicked', () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+    createApp(root);
+
+    const { loadURLMocks } = attachWebviewMocks(root);
+    const codeTab = root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement;
+    codeTab.click();
+
+    const input = root.querySelector('[data-testid="code-repository-input"]') as HTMLInputElement;
+    input.value = 'obra/superpowers';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
+
+    const codeLoadMocks = loadURLMocks.slice(services.length);
+    codeLoadMocks.forEach((mock) => mock.mockClear());
+
+    codeTab.click();
+
+    expect(codeLoadMocks.map((mock) => mock.mock.calls.at(-1)?.[0])).toEqual([
       'https://zread.ai/obra/superpowers',
       'https://deepwiki.com/obra/superpowers',
       'https://codewiki.google/github.com/obra/superpowers'
@@ -513,7 +856,7 @@ describe('createApp', () => {
     questionInput.value = '这个项目的核心架构是什么？';
     questionInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendQuestionButton.click();
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(root.querySelector('[data-testid="code-qa-error"]')?.textContent).toContain(
       '请先打开仓库'
@@ -836,6 +1179,8 @@ describe('createApp', () => {
     (root.querySelector('[data-testid="code-open-button"]') as HTMLButtonElement).click();
 
     const codeMocks = executeJavaScriptMocks.slice(-3);
+    const codeLoadURLMocks = loadURLMocks.slice(-3);
+    codeLoadURLMocks.forEach((mock) => mock.mockClear());
     codeMocks.forEach((mock) => {
       mock
         .mockResolvedValueOnce({ status: 'sent', errorMessage: null })
@@ -869,7 +1214,7 @@ describe('createApp', () => {
     await flushAsyncWork();
 
     expect(root.querySelectorAll('[data-testid="code-qa-round"]')).toHaveLength(2);
-    expect(loadURLMocks.slice(-3).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+    expect(codeLoadURLMocks.every((mock) => mock.mock.calls.length === 0)).toBe(true);
     expect(codeMocks[1].mock.calls[2]?.[0]).toContain(
       'textarea[data-deepwiki-input="followup"]'
     );
@@ -947,7 +1292,7 @@ describe('createApp', () => {
     (root.querySelector('[data-testid="product-tab-code"]') as HTMLButtonElement).click();
     (root.querySelector('[data-testid="export-button"]') as HTMLButtonElement).click();
 
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(saveMarkdownExport).not.toHaveBeenCalled();
     expect(root.querySelector('[data-top-error]')?.textContent).toBe('没有可导出的代码问答记录');
@@ -1018,7 +1363,7 @@ describe('createApp', () => {
     const exportButton = root.querySelector('[data-testid="export-button"]') as HTMLButtonElement;
     expect(exportButton.hidden).toBe(false);
     exportButton.click();
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(saveMarkdownExport).toHaveBeenCalledTimes(1);
     const markdown = saveMarkdownExport.mock.calls[0]?.[0]?.markdown as string;
@@ -1079,7 +1424,7 @@ describe('createApp', () => {
     const enabledToggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-pane-enabled]')
     ) as HTMLInputElement[];
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
 
     mockSuccessfulSends(executeJavaScriptMocks);
 
@@ -1089,7 +1434,7 @@ describe('createApp', () => {
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
 
-    await flushPromises();
+    await flushPhysicalSendWork();
 
     expect(loadURLMocks[0]).toHaveBeenCalledWith(getService('chatgpt').url);
     expect(loadURLMocks[1]).not.toHaveBeenCalled();
@@ -1103,7 +1448,7 @@ describe('createApp', () => {
       executeJavaScriptMocks.slice(3, services.length).every((mock) => mock.mock.calls.length >= 1)
     ).toBe(true);
 
-    const doubaoScript = executeJavaScriptMocks[3].mock.calls[0]?.[0];
+    const doubaoScript = executeJavaScriptMocks[3].mock.calls[1]?.[0];
     expect(doubaoScript).toContain(JSON.stringify('hello renderer'));
     expect(loadURLMocks[3].mock.invocationCallOrder[0]).toBeLessThan(
       executeJavaScriptMocks[3].mock.invocationCallOrder[0]
@@ -1120,7 +1465,7 @@ describe('createApp', () => {
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
     const doubao = getService('doubao') as (typeof services)[number] & {
       send: {
         inputSelectors: string[];
@@ -1128,7 +1473,14 @@ describe('createApp', () => {
       };
     };
 
-    for (const mock of executeJavaScriptMocks) {
+    for (const [index, mock] of executeJavaScriptMocks.entries()) {
+      if (services[index]?.id === 'doubao') {
+        mock
+          .mockResolvedValueOnce({ status: 'ok', errorMessage: null })
+          .mockResolvedValue({ status: 'sent', errorMessage: null });
+        continue;
+      }
+
       mock.mockResolvedValue({ status: 'sent', errorMessage: null });
     }
 
@@ -1142,20 +1494,233 @@ describe('createApp', () => {
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
 
-    await flushPromises();
+    await flushAsyncWork();
 
-    expect(executeJavaScriptMocks[3]).toHaveBeenCalledTimes(1);
+    expect(executeJavaScriptMocks[3]).toHaveBeenCalledTimes(2);
     expect(loadURLMocks[3]).toHaveBeenCalledWith(doubao.url);
     expect(loadURLMocks[3].mock.invocationCallOrder[0]).toBeLessThan(
       executeJavaScriptMocks[3].mock.invocationCallOrder[0]
     );
     expect(executeJavaScriptMocks[3].mock.calls[0]?.[0]).toBe(
+      buildDomPreSendPrepareScript({
+        serviceId: 'doubao'
+      })
+    );
+    expect(executeJavaScriptMocks[3].mock.calls[1]?.[0]).toBe(
       buildDomSendScript({
         prompt: 'hello doubao',
         inputSelectors: doubao.send.inputSelectors,
         submitSelectors: doubao.send.submitSelectors
       })
     );
+  });
+
+  it('prepares DeepSeek expert mode before dom sends', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks, loadURLMocks } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
+    const deepseekIndex = services.findIndex((service) => service.id === 'deepseek');
+    const deepseek = getService('deepseek') as (typeof services)[number] & {
+      send: {
+        inputSelectors: string[];
+        submitSelectors: string[];
+      };
+    };
+
+    for (const [index, mock] of executeJavaScriptMocks.entries()) {
+      if (index === deepseekIndex) {
+        mock
+          .mockResolvedValueOnce({ status: 'ok', errorMessage: null })
+          .mockResolvedValue({ status: 'sent', errorMessage: null });
+        continue;
+      }
+
+      mock.mockResolvedValue({ status: 'sent', errorMessage: null });
+    }
+
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'deepseek') {
+        toggle.click();
+      }
+    }
+
+    promptInput.value = 'hello deepseek';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushAsyncWork();
+
+    expect(executeJavaScriptMocks[deepseekIndex]).toHaveBeenCalledTimes(2);
+    expect(loadURLMocks[deepseekIndex]).toHaveBeenCalledWith(deepseek.url);
+    expect(loadURLMocks[deepseekIndex].mock.invocationCallOrder[0]).toBeLessThan(
+      executeJavaScriptMocks[deepseekIndex].mock.invocationCallOrder[0]
+    );
+    expect(executeJavaScriptMocks[deepseekIndex].mock.calls[0]?.[0]).toBe(
+      buildDomPreSendPrepareScript({
+        serviceId: 'deepseek'
+      })
+    );
+    expect(executeJavaScriptMocks[deepseekIndex].mock.calls[1]?.[0]).toBe(
+      buildDomSendScript({
+        prompt: 'hello deepseek',
+        inputSelectors: deepseek.send.inputSelectors,
+        submitSelectors: deepseek.send.submitSelectors
+      })
+    );
+  });
+
+  it('physically clicks DeepSeek expert mode when the dom click does not take effect', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const { executeJavaScriptMocks, loadURLMocks, sendInputEventMocks } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
+    const deepseekIndex = services.findIndex((service) => service.id === 'deepseek');
+    const deepseek = getService('deepseek') as (typeof services)[number] & {
+      send: {
+        inputSelectors: string[];
+        submitSelectors: string[];
+      };
+    };
+
+    for (const [index, mock] of executeJavaScriptMocks.entries()) {
+      if (index === deepseekIndex) {
+        mock
+          .mockResolvedValueOnce({
+            status: 'manual_required',
+            errorMessage: 'DeepSeek 专家模式未生效',
+            rect: { x: 1028, y: 295, width: 120, height: 34 }
+          })
+          .mockResolvedValueOnce({ status: 'ok', errorMessage: null })
+          .mockResolvedValue({ status: 'sent', errorMessage: null });
+        continue;
+      }
+
+      mock.mockResolvedValue({ status: 'sent', errorMessage: null });
+    }
+
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'deepseek') {
+        toggle.click();
+      }
+    }
+
+    promptInput.value = 'hello deepseek physical prepare';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(loadURLMocks[deepseekIndex]).toHaveBeenCalledWith(deepseek.url);
+    expect(sendInputEventMocks[deepseekIndex].mock.calls.map((call) => call[0])).toEqual([
+      { type: 'mouseMove', x: 1088, y: 312 },
+      { type: 'mouseDown', x: 1088, y: 312, button: 'left', clickCount: 1 },
+      { type: 'mouseUp', x: 1088, y: 312, button: 'left', clickCount: 1 }
+    ]);
+    expect(executeJavaScriptMocks[deepseekIndex].mock.calls[0]?.[0]).toBe(
+      buildDomPreSendPrepareScript({
+        serviceId: 'deepseek'
+      })
+    );
+    expect(executeJavaScriptMocks[deepseekIndex].mock.calls[1]?.[0]).toBe(
+      buildDomPreSendPrepareScript({
+        serviceId: 'deepseek'
+      })
+    );
+    expect(executeJavaScriptMocks[deepseekIndex].mock.calls[2]?.[0]).toBe(
+      buildDomSendScript({
+        prompt: 'hello deepseek physical prepare',
+        inputSelectors: deepseek.send.inputSelectors,
+        submitSelectors: deepseek.send.submitSelectors
+      })
+    );
+  });
+
+  it('prepares Gemini 3.1 Pro before physical input sends', async () => {
+    const root = document.querySelector('#app') as HTMLDivElement;
+
+    createApp(root);
+
+    const {
+      executeJavaScriptMocks,
+      insertTextMocks,
+      selectAllMocks,
+      sendInputEventMocks
+    } = attachWebviewMocks(root);
+    const promptInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const toggles = Array.from(
+      root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
+    ) as HTMLInputElement[];
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
+    const geminiIndex = services.findIndex((service) => service.id === 'gemini');
+    const gemini = getService('gemini');
+
+    for (const toggle of toggles) {
+      if (toggle.dataset.serviceToggle !== 'gemini') {
+        toggle.click();
+      }
+    }
+
+    executeJavaScriptMocks[geminiIndex]
+      .mockResolvedValueOnce({ status: 'ok', errorMessage: null })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 10, y: 20, width: 200, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: true,
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        rect: { x: 250, y: 20, width: 40, height: 40 },
+        errorMessage: null
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        hasPrompt: false,
+        errorMessage: null
+      });
+
+    promptInput.value = 'hello gemini pro';
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+    sendButton.click();
+
+    await flushPhysicalSendWork();
+
+    expect(executeJavaScriptMocks[geminiIndex].mock.calls[0]?.[0]).toBe(
+      buildDomPreSendPrepareScript({
+        serviceId: 'gemini'
+      })
+    );
+    expect(executeJavaScriptMocks[geminiIndex].mock.calls[1]?.[0]).toBe(
+      buildDomSendTargetScript({
+        inputSelectors: gemini.send.inputSelectors,
+        submitSelectors: gemini.send.submitSelectors,
+        target: 'input'
+      })
+    );
+    expect(selectAllMocks[geminiIndex]).toHaveBeenCalledTimes(1);
+    expect(insertTextMocks[geminiIndex]).toHaveBeenCalledWith('hello gemini pro');
+    expect(sendInputEventMocks[geminiIndex].mock.calls[0]?.[0]).toEqual({
+      type: 'mouseMove',
+      x: 110,
+      y: 40
+    });
   });
 
   it('uses physical webview input for services that reject dom-only clicks', async () => {
@@ -1393,7 +1958,7 @@ describe('createApp', () => {
 
     createApp(root);
 
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
     sendButton.click();
 
     expect(root.querySelector('[data-top-error]')?.textContent).toBe('请输入问题');
@@ -1460,7 +2025,7 @@ describe('createApp', () => {
     expect(loadURLMocks[0]).toHaveBeenCalledWith(chatgpt.url);
     exportButton.click();
 
-    await flushPromises();
+    await flushAsyncWork();
     await flushPromises();
 
     expect(executeJavaScriptMocks[0].mock.calls[4]?.[0]).toBe(
@@ -1597,7 +2162,7 @@ describe('createApp', () => {
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
 
     for (const toggle of toggles.slice(1)) {
       toggle.click();
@@ -1627,7 +2192,7 @@ describe('createApp', () => {
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
 
     for (const toggle of toggles) {
       if (toggle.dataset.serviceToggle !== 'deepseek') {
@@ -1641,7 +2206,7 @@ describe('createApp', () => {
     promptInput.dispatchEvent(new Event('input', { bubbles: true }));
     sendButton.click();
 
-    await flushPromises();
+    await flushAsyncWork();
 
     expect(pane.getAttribute('data-status')).toBe('error');
     expect(pane.querySelector('.pane-error')?.textContent).toBe('boom failed');
@@ -1658,7 +2223,7 @@ describe('createApp', () => {
     const toggles = Array.from(
       root.querySelectorAll('input[type="checkbox"][data-service-toggle]')
     ) as HTMLInputElement[];
-    const sendButton = root.querySelector('button[type="button"]') as HTMLButtonElement;
+    const sendButton = root.querySelector('.send-button') as HTMLButtonElement;
     const firstSend = createDeferred<unknown>();
     const secondSend = createDeferred<unknown>();
 

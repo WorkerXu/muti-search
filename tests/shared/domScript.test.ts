@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildDomExtractAnswerScript,
   buildDomFillScript,
+  buildDomPreSendPrepareScript,
   buildDomSendTargetScript,
   buildDomSendScript,
   type DomExtractAnswerScriptInput,
   type DomExtractAnswerScriptResult,
   type DomFillScriptInput,
   type DomFillScriptResult,
+  type DomPreSendPrepareScriptInput,
+  type DomPreSendPrepareScriptResult,
   type DomSendTargetScriptInput,
   type DomSendTargetScriptResult,
   type DomSendScriptInput,
@@ -24,6 +27,11 @@ const runDomExtractAnswerScript = async (
 
 const runDomFillScript = async (input: DomFillScriptInput): Promise<DomFillScriptResult> =>
   (await window.eval(buildDomFillScript(input))) as DomFillScriptResult;
+
+const runDomPreSendPrepareScript = async (
+  input: DomPreSendPrepareScriptInput
+): Promise<DomPreSendPrepareScriptResult> =>
+  (await window.eval(buildDomPreSendPrepareScript(input))) as DomPreSendPrepareScriptResult;
 
 const runDomSendTargetScript = async (
   input: DomSendTargetScriptInput
@@ -495,5 +503,256 @@ describe('buildDomSendScript', () => {
     expect(result).toEqual({ status: 'ok', errorMessage: null });
     expect(input.textContent).toBe('editable physical fill');
     expect(events).toContain('change');
+  });
+
+  it('selects Doubao expert mode before sending', async () => {
+    document.body.innerHTML = '<button class="mode">快速</button>';
+
+    const modeButton = document.querySelector('.mode') as HTMLButtonElement;
+    modeButton.getBoundingClientRect = () =>
+      ({ left: 760, top: 600, width: 73, height: 32 }) as DOMRect;
+    modeButton.addEventListener('click', () => {
+      if (document.querySelector('[role="menuitem"]')) {
+        return;
+      }
+
+      const expert = document.createElement('button');
+      expert.setAttribute('role', 'menuitem');
+      expert.textContent = '专家 研究级专业问答 - 2.1 Turbo';
+      expert.getBoundingClientRect = () =>
+        ({ left: 760, top: 520, width: 240, height: 44 }) as DOMRect;
+      expert.addEventListener('click', () => {
+        modeButton.textContent = '专家';
+      });
+      document.body.append(expert);
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'doubao' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(modeButton.textContent).toBe('专家');
+  });
+
+  it('prefers the Doubao expert menu item over the expanded mode button text', async () => {
+    document.body.innerHTML = '<button class="mode">快速</button>';
+
+    const modeButton = document.querySelector('.mode') as HTMLButtonElement;
+    let modeButtonClicks = 0;
+    let expertClicks = 0;
+    modeButton.getBoundingClientRect = () =>
+      ({ left: 760, top: 600, width: 73, height: 32 }) as DOMRect;
+    modeButton.addEventListener('click', () => {
+      modeButtonClicks += 1;
+      if (document.querySelector('[role="menuitem"]')) {
+        return;
+      }
+
+      modeButton.textContent =
+        '快速适用于大部分情况专家研究级专业问答 - 2.1 Turbo快速';
+      const expert = document.createElement('div');
+      expert.setAttribute('role', 'menuitem');
+      expert.textContent = '专家 研究级专业问答 - 2.1 Turbo';
+      expert.getBoundingClientRect = () =>
+        ({ left: 760, top: 520, width: 240, height: 44 }) as DOMRect;
+      expert.addEventListener('click', () => {
+        expertClicks += 1;
+        modeButton.textContent = '专家';
+      });
+      document.body.append(expert);
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'doubao' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(modeButtonClicks).toBe(1);
+    expect(expertClicks).toBe(1);
+    expect(modeButton.textContent).toBe('专家');
+  });
+
+  it('requires Doubao expert mode to be visibly selected before sending', async () => {
+    document.body.innerHTML = '<button class="mode">快速</button>';
+
+    const modeButton = document.querySelector('.mode') as HTMLButtonElement;
+    modeButton.getBoundingClientRect = () =>
+      ({ left: 760, top: 600, width: 73, height: 32 }) as DOMRect;
+    modeButton.addEventListener('click', () => {
+      if (document.querySelector('[role="menuitem"]')) {
+        return;
+      }
+
+      const expert = document.createElement('button');
+      expert.setAttribute('role', 'menuitem');
+      expert.textContent = '专家 研究级专业问答 - 2.1 Turbo';
+      expert.getBoundingClientRect = () =>
+        ({ left: 760, top: 520, width: 240, height: 44 }) as DOMRect;
+      document.body.append(expert);
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'doubao' });
+
+    expect(result).toEqual({ status: 'manual_required', errorMessage: '豆包专家模式未生效' });
+    expect(modeButton.textContent).toBe('快速');
+  });
+
+  it('keeps Doubao expert mode when it is already selected', async () => {
+    document.body.innerHTML = '<button class="mode">专家</button>';
+
+    const modeButton = document.querySelector('.mode') as HTMLButtonElement;
+    let clicks = 0;
+    modeButton.getBoundingClientRect = () =>
+      ({ left: 760, top: 600, width: 73, height: 32 }) as DOMRect;
+    modeButton.addEventListener('click', () => {
+      clicks += 1;
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'doubao' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(clicks).toBe(0);
+  });
+
+  it('selects DeepSeek expert mode before sending', async () => {
+    document.body.innerHTML = `
+      <h1>使用快速模式开始对话</h1>
+      <div role="radiogroup">
+        <div role="radio" class="selected"><span>快速模式</span></div>
+        <div role="radio"><span>专家模式</span></div>
+        <div role="radio"><span>识图模式</span></div>
+      </div>
+    `;
+
+    const heading = document.querySelector('h1') as HTMLHeadingElement;
+    const quick = document.querySelector('[role="radio"]') as HTMLDivElement;
+    const expert = Array.from(document.querySelectorAll('[role="radio"]')).find((element) =>
+      /专家模式/.test(element.textContent || '')
+    ) as HTMLDivElement;
+
+    [quick, expert].forEach((element, index) => {
+      element.getBoundingClientRect = () =>
+        ({ left: 900 + index * 124, top: 295, width: 120, height: 34 }) as DOMRect;
+    });
+    expert.addEventListener('click', () => {
+      quick.className = '';
+      expert.className = 'selected';
+      heading.textContent = '使用专家模式开始对话';
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'deepseek' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(heading.textContent).toBe('使用专家模式开始对话');
+    expect(expert.className).toBe('selected');
+  });
+
+  it('recognizes DeepSeek expert mode selected by the radio-only selected class', async () => {
+    document.body.innerHTML = `
+      <h1>使用快速模式开始对话</h1>
+      <div role="radiogroup">
+        <div role="radio" class="_9f2341b _18572c1 _31a22b0"><span>快速模式</span></div>
+        <div role="radio" class="_9f2341b _18572c1"><span>专家模式</span></div>
+        <div role="radio" class="_9f2341b _18572c1"><span>识图模式</span></div>
+      </div>
+    `;
+
+    const radios = Array.from(document.querySelectorAll('[role="radio"]')) as HTMLDivElement[];
+    const expert = radios[1];
+
+    radios.forEach((element, index) => {
+      element.getBoundingClientRect = () =>
+        ({ left: 900 + index * 124, top: 295, width: 120, height: 34 }) as DOMRect;
+    });
+    expert.addEventListener('click', () => {
+      radios[0].className = '_9f2341b _18572c1';
+      expert.className = '_9f2341b _18572c1 _31a22b0';
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'deepseek' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(expert.className).toContain('_31a22b0');
+  });
+
+  it('returns the DeepSeek expert mode rect when the dom click does not take effect', async () => {
+    document.body.innerHTML = `
+      <h1>使用快速模式开始对话</h1>
+      <div role="radiogroup">
+        <div role="radio" class="_9f2341b _18572c1 _31a22b0"><span>快速模式</span></div>
+        <div role="radio" class="_9f2341b _18572c1"><span>专家模式</span></div>
+        <div role="radio" class="_9f2341b _18572c1"><span>识图模式</span></div>
+      </div>
+    `;
+
+    const expert = Array.from(document.querySelectorAll('[role="radio"]')).find((element) =>
+      /专家模式/.test(element.textContent || '')
+    ) as HTMLDivElement;
+    expert.getBoundingClientRect = () =>
+      ({ left: 1028, top: 295, width: 120, height: 34 }) as DOMRect;
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'deepseek' });
+
+    expect(result).toEqual({
+      status: 'manual_required',
+      errorMessage: 'DeepSeek 专家模式未生效',
+      rect: { x: 1028, y: 295, width: 120, height: 34 }
+    });
+  });
+
+  it('selects Gemini 3.1 Pro before sending', async () => {
+    document.body.innerHTML =
+      '<button aria-label="打开模式选择器，当前模式为“Flash”">Flash</button>';
+
+    const modelButton = document.querySelector('button') as HTMLButtonElement;
+    modelButton.getBoundingClientRect = () =>
+      ({ left: 820, top: 700, width: 120, height: 36 }) as DOMRect;
+    modelButton.addEventListener('click', () => {
+      if (document.querySelector('[role="menuitem"]')) {
+        return;
+      }
+
+      const pro = document.createElement('button');
+      pro.setAttribute('role', 'menuitem');
+      pro.textContent = '3.1 Pro 高等数学与代码';
+      pro.getBoundingClientRect = () =>
+        ({ left: 820, top: 620, width: 260, height: 44 }) as DOMRect;
+      pro.addEventListener('click', () => {
+        modelButton.textContent = 'Pro';
+        modelButton.setAttribute('aria-label', '打开模式选择器，当前模式为“3.1 Pro”');
+      });
+      document.body.append(pro);
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'gemini' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(modelButton.getAttribute('aria-label')).toContain('3.1 Pro');
+  });
+
+  it('does not click Gemini 3.1 Pro when the menu reports it is already selected', async () => {
+    document.body.innerHTML = '<button aria-label="打开模式选择器，当前模式为“Pro”">Pro</button>';
+
+    const modelButton = document.querySelector('button') as HTMLButtonElement;
+    let proClicks = 0;
+    modelButton.getBoundingClientRect = () =>
+      ({ left: 820, top: 700, width: 120, height: 36 }) as DOMRect;
+    modelButton.addEventListener('click', () => {
+      if (document.querySelector('[role="menuitem"]')) {
+        return;
+      }
+
+      const selectedPro = document.createElement('button');
+      selectedPro.setAttribute('role', 'menuitem');
+      selectedPro.textContent = '已选中 3.1 Pro 高等数学与代码';
+      selectedPro.getBoundingClientRect = () =>
+        ({ left: 820, top: 620, width: 260, height: 44 }) as DOMRect;
+      selectedPro.addEventListener('click', () => {
+        proClicks += 1;
+      });
+      document.body.append(selectedPro);
+    });
+
+    const result = await runDomPreSendPrepareScript({ serviceId: 'gemini' });
+
+    expect(result).toEqual({ status: 'ok', errorMessage: null });
+    expect(proClicks).toBe(0);
   });
 });
